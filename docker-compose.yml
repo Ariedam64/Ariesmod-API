@@ -1,0 +1,30 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:16
+    container_name: aries_mod_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: aries
+      POSTGRES_PASSWORD: wYIYc7spXU6OpAb8ocPsyAMZlB1SeZwQ7Vr+qokbvrc=
+      POSTGRES_DB: aries_mod
+    volumes:
+      - db_data:/var/lib/postgresql/data
+
+  api:
+    build: .
+    container_name: ariesmod-api
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgres://aries:wYIYc7spXU6OpAb8ocPsyAMZlB1SeZwQ7Vr+qokbvrc=@db:5432/aries_mod
+      PORT: 4000
+    depends_on:
+      - db
+    ports:
+      - "4000:4000"
+
+volumes:
+  db_data:
