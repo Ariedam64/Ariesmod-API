@@ -26,7 +26,7 @@ const DEFAULT_PRIVACY: PlayerPrivacyPayload = {
   hideRoomFromPublicList: false,
 };  
 
-const MULTI_ONLINE_THRESHOLD_MS = 3 * 60 * 1000;
+const MULTI_ONLINE_THRESHOLD_MS = 6 * 60 * 1000;
   
 export function registerPlayersViewRoute(app: Application): void {
   app.post(
