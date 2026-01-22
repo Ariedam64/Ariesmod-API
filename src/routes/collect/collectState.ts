@@ -3,29 +3,37 @@ import { query } from "../../db";
 import { getIp } from "../../lib/ip";
 import { checkRateLimit } from "../../lib/rateLimit";
 
-
 export function registerCollectStateRoute(app: Application): void {
   app.post("/collect-state", async (req: Request, res: Response) => {
     const ip = getIp(req);
 
     const body: any = req.body ?? {};
     const {
-      playerId,
+      playerId: playerIdRaw,
       playerName,
       avatarUrl,
       coins,
       room,
       state,
       privacy,
+      modVersion,
     } = body;
 
-    if (typeof playerId !== "string" || playerId.length < 3) {
+    // Normalisation + validations
+    const pid = typeof playerIdRaw === "string" ? playerIdRaw.trim() : "";
+
+    if (pid.length < 3) {
       return res.status(400).send("Invalid playerId");
     }
 
-    // Rate limit
+    // ⬇⬇⬇ FIX: si "p_" = pas connecté => on ignore complètement
+    if (pid.startsWith("p_")) {
+      return res.status(204).send();
+    }
+
+    // Rate limit (sur l'id normalisé)
     try {
-      const allowed = await checkRateLimit(ip, playerId, 60, 60);
+      const allowed = await checkRateLimit(ip, pid, 60, 60);
       if (!allowed) {
         return res.status(429).send("Too many requests");
       }
@@ -37,30 +45,39 @@ export function registerCollectStateRoute(app: Application): void {
     const now = new Date().toISOString();
     const normalizedPrivacy =
       privacy && typeof privacy === "object" ? privacy : null;
+    const modVersionValue =
+      typeof modVersion === "string"
+        ? modVersion.trim().slice(0, 64) || null
+        : null;
 
     // 1) players : joueur local
     try {
       await query(
         `
         insert into public.players (
-          id, name, avatar_url, coins, last_event_at, has_mod_installed
+          id, name, avatar_url, coins, last_event_at, has_mod_installed, mod_version
         )
-        values ($1,$2,$3,$4,$5,true)
+        values ($1,$2,$3,$4,$5,true,$6)
         on conflict (id) do update set
           name = excluded.name,
           avatar_url = excluded.avatar_url,
           coins = excluded.coins,
           last_event_at = excluded.last_event_at,
-          has_mod_installed = true
+          has_mod_installed = true,
+          mod_version = coalesce(
+            excluded.mod_version,
+            public.players.mod_version
+          )
         `,
         [
-          playerId,
-          typeof playerName === "string" && playerName.length > 0
-            ? playerName
-            : playerId,
+          pid,
+          typeof playerName === "string" && playerName.trim().length > 0
+            ? playerName.trim()
+            : pid,
           typeof avatarUrl === "string" ? avatarUrl : null,
           typeof coins === "number" ? coins : 0,
           now,
+          modVersionValue,
         ],
       );
     } catch (err) {
@@ -109,14 +126,12 @@ export function registerCollectStateRoute(app: Application): void {
             updated_at = excluded.updated_at
           `,
           [
-            playerId,
+            pid,
             typeof showProfile === "boolean" ? showProfile : null,
             typeof showGarden === "boolean" ? showGarden : null,
             typeof showInventory === "boolean" ? showInventory : null,
             typeof showCoins === "boolean" ? showCoins : null,
-            typeof showActivityLog === "boolean"
-              ? showActivityLog
-              : null,
+            typeof showActivityLog === "boolean" ? showActivityLog : null,
             typeof showJournal === "boolean" ? showJournal : null,
             typeof showStats === "boolean" ? showStats : null,
             typeof hideRoomFromPublicList === "boolean"
@@ -141,17 +156,13 @@ export function registerCollectStateRoute(app: Application): void {
       const journal = st.journal ?? null;
 
       const gardenJson =
-        garden !== null && garden !== undefined
-          ? JSON.stringify(garden)
-          : null;
+        garden !== null && garden !== undefined ? JSON.stringify(garden) : null;
       const inventoryJson =
         inventory !== null && inventory !== undefined
           ? JSON.stringify(inventory)
           : null;
       const statsJson =
-        stats !== null && stats !== undefined
-          ? JSON.stringify(stats)
-          : null;
+        stats !== null && stats !== undefined ? JSON.stringify(stats) : null;
       const activityLogJson =
         activityLog !== null && activityLog !== undefined
           ? JSON.stringify(activityLog)
@@ -177,7 +188,7 @@ export function registerCollectStateRoute(app: Application): void {
             updated_at = excluded.updated_at
           `,
           [
-            playerId,
+            pid,
             gardenJson,
             inventoryJson,
             statsJson,
@@ -190,9 +201,6 @@ export function registerCollectStateRoute(app: Application): void {
         console.error("player_state upsert error:", err);
         return res.status(500).send("DB error (player_state)");
       }
-    } else {
-      // rien reçu ou state=null → on ne modifie pas player_state
-      // console.debug("[collect-state] no state payload, skipping player_state update for", playerId);
     }
 
     // 3) rooms / room_players
@@ -225,7 +233,7 @@ export function registerCollectStateRoute(app: Application): void {
           const s: any = slot;
 
           const rawPlayerId =
-            typeof s.playerId === "string" ? s.playerId : null;
+            typeof s.playerId === "string" ? s.playerId.trim() : null;
 
           const name =
             typeof s.name === "string" ? s.name : rawPlayerId;
@@ -252,7 +260,12 @@ export function registerCollectStateRoute(app: Application): void {
             cleaned.push(cleanedSlot);
           }
 
-          if (rawPlayerId && rawPlayerId !== playerId) {
+          // On n'upsert PAS les ids "p_" et pas le joueur local
+          if (
+            rawPlayerId &&
+            rawPlayerId !== pid &&
+            !rawPlayerId.startsWith("p_")
+          ) {
             const row: any = {
               id: rawPlayerId,
               has_mod_installed: false,
@@ -270,7 +283,7 @@ export function registerCollectStateRoute(app: Application): void {
         }
       }
 
-      // bulk upsert autres joueurs
+      // bulk upsert autres joueurs (filtrés)
       if (playersToUpsert.length > 0) {
         const byId = new Map<string, any>();
         for (const p of playersToUpsert) {
@@ -317,9 +330,7 @@ export function registerCollectStateRoute(app: Application): void {
 
       // JSON pour user_slots
       const userSlotsJson =
-        userSlots && userSlots.length > 0
-          ? JSON.stringify(userSlots)
-          : null;
+        userSlots && userSlots.length > 0 ? JSON.stringify(userSlots) : null;
 
       try {
         await query(
@@ -339,7 +350,7 @@ export function registerCollectStateRoute(app: Application): void {
             roomId,
             isPrivate,
             now,
-            playerId,
+            pid,
             playersCount,
             userSlotsJson,
           ],
@@ -359,7 +370,7 @@ export function registerCollectStateRoute(app: Application): void {
             and room_id <> $3
             and left_at is null
           `,
-          [now, playerId, roomId],
+          [now, pid, roomId],
         );
       } catch (err) {
         console.error("room_players close others error:", err);
@@ -375,7 +386,7 @@ export function registerCollectStateRoute(app: Application): void {
             joined_at = excluded.joined_at,
             left_at = excluded.left_at
           `,
-          [roomId, playerId, now],
+          [roomId, pid, now],
         );
       } catch (err) {
         console.error("room_players upsert error:", err);

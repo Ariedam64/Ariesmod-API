@@ -79,8 +79,25 @@ app.post("/friend-respond", async (req: Request, res: Response) => {
         .send("Requester cannot respond to own request");
     }
 
-    const newStatus = action === "accept" ? "accepted" : "rejected";
     const now = new Date().toISOString();
+
+    if (action === "reject") {
+      try {
+        await query(
+          `
+          delete from public.player_relationships
+          where user_one_id = $1
+            and user_two_id = $2
+          `,
+          [userOneId, userTwoId],
+        );
+      } catch (err) {
+        console.error("friend-respond delete error:", err);
+        return res.status(500).send("DB error (relationship delete)");
+      }
+
+      return res.status(204).send();
+    }
 
     try {
       await query(
@@ -91,7 +108,7 @@ app.post("/friend-respond", async (req: Request, res: Response) => {
         where user_one_id = $3
           and user_two_id = $4
         `,
-        [newStatus, now, userOneId, userTwoId],
+        ["accepted", now, userOneId, userTwoId],
       );
     } catch (err) {
       console.error("friend-respond update error:", err);

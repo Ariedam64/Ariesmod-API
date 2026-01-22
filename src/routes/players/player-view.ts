@@ -66,7 +66,14 @@ export function registerPlayerViewRoute(app: Application): void {
     try {
       const { rows } = await query(
         `
-        select id, name, avatar_url, coins, has_mod_installed, last_event_at
+        select
+          id,
+          name,
+          avatar_url,
+          coins,
+          has_mod_installed,
+          last_event_at,
+          mod_version
         from public.players
         where id = $1
         limit 1
@@ -234,6 +241,7 @@ export function registerPlayerViewRoute(app: Application): void {
         wantProfile && privacy.showCoins ? player.coins : null,
       room: wantRoom ? room : null,
       hasModInstalled: wantProfile ? !!player.has_mod_installed : false,
+      modVersion: wantProfile ? player.mod_version ?? null : null,
       isOnline,
       lastEventAt,
       privacy: wantProfile ? privacy : DEFAULT_PRIVACY,

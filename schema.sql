@@ -8,7 +8,8 @@ create table if not exists public.players (
   coins bigint not null default 0,
   last_event_at timestamptz null,
   created_at timestamptz not null default now(),
-  has_mod_installed boolean not null default false
+  has_mod_installed boolean not null default false,
+  mod_version text null
 );
 
 create index if not exists players_name_idx

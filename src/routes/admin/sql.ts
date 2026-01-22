@@ -15,7 +15,8 @@ export function registerAdminSqlAndToolsRoutes(app: Application): void {
 
     const lower = sqlInput.toLowerCase();
 
-    if (!lower.startsWith("select ")) {
+    // Authorize CTEs and common formatting: accept with leading "with" or whitespace before select
+    if (!lower.startsWith("select") && !lower.startsWith("with")) {
       res
         .status(400)
         .json({ error: "Only SELECT queries are allowed in this console" });
@@ -102,6 +103,7 @@ export function registerAdminSqlAndToolsRoutes(app: Application): void {
           p.last_event_at,
           p.created_at,
           p.has_mod_installed,
+          rl_recent.ip as ip,
           ps.garden,
           ps.inventory,
           ps.stats,
@@ -119,6 +121,14 @@ export function registerAdminSqlAndToolsRoutes(app: Application): void {
           from public.rate_limit_usage
           where player_id = p.id
         ) rl on true
+        left join lateral (
+          select ip
+          from public.rate_limit_usage
+          where player_id = p.id
+            and ip is not null
+          order by bucket_start desc
+          limit 1
+        ) rl_recent on true
         left join lateral (
           select rp.room_id, r.is_private
           from public.room_players rp

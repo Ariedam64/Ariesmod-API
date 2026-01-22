@@ -93,7 +93,8 @@ export function registerPlayersViewRoute(app: Application): void {
             avatar_url,
             coins,
             has_mod_installed,
-            last_event_at
+            last_event_at,
+            mod_version
           from public.players
           where id = any($1::text[])
           `,
@@ -307,6 +308,7 @@ export function registerPlayersViewRoute(app: Application): void {
         const view: any = {
           playerId: row.id,
           hasModInstalled: !!row.has_mod_installed,
+          modVersion: row.mod_version ?? null,
           isOnline,
           lastEventAt,
           privacy,

@@ -39,6 +39,8 @@ app.post("/friend-request", async (req: Request, res: Response) => {
         ? [fromPlayerId, toPlayerId]
         : [toPlayerId, fromPlayerId];
 
+    let hadRejectedRelation = false;
+
     // vérifier que les deux players existent
     try {
       const { rows: players } = await query<{ id: string }>(
@@ -84,14 +86,28 @@ app.post("/friend-request", async (req: Request, res: Response) => {
           return res.status(409).send("Friend request already pending");
         }
         if (existing.status === "rejected") {
-          return res
-            .status(409)
-            .send("Friend request previously rejected");
+          hadRejectedRelation = true;
         }
       }
     } catch (err) {
       console.error("friend-request relationship check error:", err);
       return res.status(500).send("DB error (relationship check)");
+    }
+
+    if (hadRejectedRelation) {
+      try {
+        await query(
+          `
+          delete from public.player_relationships
+          where user_one_id = $1
+            and user_two_id = $2
+          `,
+          [userOneId, userTwoId],
+        );
+      } catch (err) {
+        console.error("friend-request cleanup rejected error:", err);
+        return res.status(500).send("DB error (cleanup rejected)");
+      }
     }
 
     // créer la demande
