@@ -1,13 +1,13 @@
 import type { Application, Request, Response } from "express";
 import { getIp } from "../../lib/ip";
 import { checkRateLimit } from "../../lib/rateLimit";
-import { isPlayerConnected, normalizeId } from "./common";
-import { addStream } from "./streamHub";
+import { isPlayerConnected } from "../messages/common";
+import { addRequestStream } from "./requests-stream-hub";
 
-export function registerMessagesStreamRoute(app: Application): void {
-  app.get("/messages/stream", async (req: Request, res: Response) => {
+export function registerFriendRequestsStreamRoute(app: Application): void {
+  app.get("/friend-requests/stream", async (req: Request, res: Response) => {
     const ip = getIp(req);
-    const playerId = normalizeId(req.query.playerId);
+    const playerId = String(req.query.playerId ?? "").trim();
 
     if (!playerId || playerId.length < 3) {
       return res.status(400).send("Invalid playerId");
@@ -19,7 +19,7 @@ export function registerMessagesStreamRoute(app: Application): void {
         return res.status(429).send("Too many requests");
       }
     } catch (err) {
-      console.error("messages stream rate limit error:", err);
+      console.error("friend-requests stream rate limit error:", err);
       return res.status(500).send("Rate limiter error");
     }
 
@@ -27,7 +27,7 @@ export function registerMessagesStreamRoute(app: Application): void {
     try {
       connected = await isPlayerConnected(playerId);
     } catch (err) {
-      console.error("messages stream connected check error:", err);
+      console.error("friend-requests stream connected check error:", err);
       return res.status(500).send("DB error");
     }
 
@@ -46,6 +46,6 @@ export function registerMessagesStreamRoute(app: Application): void {
     req.socket.setTimeout(0);
 
     res.write(`event: connected\ndata: ${JSON.stringify({ playerId })}\n\n`);
-    addStream(playerId, res);
+    addRequestStream(playerId, res);
   });
 }

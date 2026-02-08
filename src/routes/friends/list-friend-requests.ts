@@ -16,7 +16,7 @@ export function registerListFriendRequestsRoute(app: Application): void {
       }
 
       try {
-        const allowed = await checkRateLimit(ip, playerId);
+        const allowed = await checkRateLimit(ip, playerId, 400, 240);
         if (!allowed) {
           return res.status(429).send("Too many requests");
         }

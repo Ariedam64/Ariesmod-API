@@ -2,6 +2,7 @@ import type { Application, Request, Response } from "express";
 import { query } from "../../db";
 import { getIp } from "../../lib/ip";
 import { checkRateLimit } from "../../lib/rateLimit";
+import { pushRequestEvent } from "./requests-stream-hub";
 
 export function registerFriendRespondRoute(app: Application): void {
 
@@ -96,6 +97,15 @@ app.post("/friend-respond", async (req: Request, res: Response) => {
         return res.status(500).send("DB error (relationship delete)");
       }
 
+      const payload = {
+        requesterId: rel.requested_by,
+        responderId: playerId,
+        action,
+        updatedAt: now,
+      };
+      pushRequestEvent(rel.requested_by, "friend_response", payload);
+      pushRequestEvent(playerId, "friend_response", payload);
+
       return res.status(204).send();
     }
 
@@ -114,6 +124,15 @@ app.post("/friend-respond", async (req: Request, res: Response) => {
       console.error("friend-respond update error:", err);
       return res.status(500).send("DB error (relationship update)");
     }
+
+    const payload = {
+      requesterId: rel.requested_by,
+      responderId: playerId,
+      action,
+      updatedAt: now,
+    };
+    pushRequestEvent(rel.requested_by, "friend_response", payload);
+    pushRequestEvent(playerId, "friend_response", payload);
 
     return res.status(204).send();
   });

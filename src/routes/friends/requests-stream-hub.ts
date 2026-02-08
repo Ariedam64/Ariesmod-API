@@ -36,7 +36,7 @@ function startHeartbeat(): void {
   }, HEARTBEAT_MS);
 }
 
-export function addStream(playerId: string, res: Response): void {
+export function addRequestStream(playerId: string, res: Response): void {
   const conn: StreamConnection = { res };
   const set = streams.get(playerId) ?? new Set<StreamConnection>();
   set.add(conn);
@@ -52,7 +52,7 @@ export function addStream(playerId: string, res: Response): void {
   });
 }
 
-export function pushEvent(
+export function pushRequestEvent(
   playerId: string,
   event: string,
   payload: Record<string, any>,

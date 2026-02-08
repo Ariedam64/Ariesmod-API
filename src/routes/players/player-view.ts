@@ -41,7 +41,7 @@ export function registerPlayerViewRoute(app: Application): void {
 
     const ip = getIp(req);
     try {
-        const allowed = await checkRateLimit(ip, playerId);
+        const allowed = await checkRateLimit(ip, playerId, 300, 120);
         if (!allowed) {
         return res.status(429).send("Too many requests");
         }

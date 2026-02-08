@@ -18,6 +18,7 @@ Express + PostgreSQL API for Arie's mod. It ingests player state from the game c
   - `POST /friend-remove` – delete an accepted friendship.
   - `GET /list-friend-requests?playerId=` – incoming/outgoing pending requests.
   - `GET /list-friends?playerId=` – accepted friendships.
+  - `GET /friend-requests/stream?playerId=` – SSE stream for real-time requests.
 - Messages
   - `POST /messages/send` – send a DM (friends only).
   - `GET /messages/thread?playerId=&otherPlayerId=` – message history.
@@ -26,6 +27,7 @@ Express + PostgreSQL API for Arie's mod. It ingests player state from the game c
 - Player views
   - `GET /get-player-view?playerId=&sections=` – detailed view for one player with optional section filtering.
   - `POST /get-players-view` – batched player views; accepts `{ playerIds, sections }`.
+  - `GET /list-mod-players?query=&limit=&offset=` – list players with the mod installed (optional name/id search).
 - Admin (HTTP Basic auth with `ADMIN_USER` / `ADMIN_PASS`)
   - `GET /admin` – static admin UI.
   - `GET /admin/table?table=` – paged reads over real tables or derived stats.

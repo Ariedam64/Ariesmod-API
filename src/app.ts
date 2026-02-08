@@ -16,6 +16,13 @@ export const app = express();
 app.use(cors());
 app.use(express.json({ limit: "1mb" }));
 
+// Log all incoming requests
+app.use((req, res, next) => {
+  const timestamp = new Date().toISOString();
+  console.log(`[${timestamp}] ${req.method} ${req.path}`);
+  next();
+});
+
 app.get("/health", (_req, res) => {
   res.status(200).json({ ok: true });
 });

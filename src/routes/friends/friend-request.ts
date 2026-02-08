@@ -2,6 +2,7 @@ import type { Application, Request, Response } from "express";
 import { query } from "../../db";
 import { getIp } from "../../lib/ip";
 import { checkRateLimit } from "../../lib/rateLimit";
+import { pushRequestEvent } from "./requests-stream-hub";
 
 export function registerFriendRequestRoute(app: Application): void {
 
@@ -112,6 +113,7 @@ app.post("/friend-request", async (req: Request, res: Response) => {
 
     // créer la demande
     try {
+      const now = new Date().toISOString();
       await query(
         `
         insert into public.player_relationships (
@@ -124,6 +126,15 @@ app.post("/friend-request", async (req: Request, res: Response) => {
         `,
         [userOneId, userTwoId, fromPlayerId],
       );
+
+      const payload = {
+        requesterId: fromPlayerId,
+        targetId: toPlayerId,
+        createdAt: now,
+      };
+
+      pushRequestEvent(toPlayerId, "friend_request", payload);
+      pushRequestEvent(fromPlayerId, "friend_request", payload);
     } catch (err) {
       console.error("friend-request insert error:", err);
       return res.status(500).send("DB error (create request)");
