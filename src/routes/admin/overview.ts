@@ -151,7 +151,8 @@ export function registerAdminOverviewRoutes(app: Application): void {
             coalesce(sum(r.hit_count), 0) as hits
           from series s
           left join public.rate_limit_usage r
-            on date_trunc('hour', r.bucket_start) = s.bucket
+            on r.bucket_start >= s.bucket
+           and r.bucket_start < s.bucket + interval '1 hour'
           group by s.bucket
           order by s.bucket asc
         `),

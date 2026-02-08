@@ -70,6 +70,7 @@ export function registerPlayerViewRoute(app: Application): void {
           id,
           name,
           avatar_url,
+          avatar,
           coins,
           has_mod_installed,
           last_event_at,
@@ -237,6 +238,8 @@ export function registerPlayerViewRoute(app: Application): void {
         wantProfile && privacy.showProfile ? player.name : null,
       avatarUrl:
         wantProfile && privacy.showProfile ? player.avatar_url : null,
+      avatar:
+        wantProfile && privacy.showProfile ? player.avatar ?? null : null,
       coins:
         wantProfile && privacy.showCoins ? player.coins : null,
       room: wantRoom ? room : null,

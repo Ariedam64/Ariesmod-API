@@ -91,6 +91,7 @@ export function registerPlayersViewRoute(app: Application): void {
             id,
             name,
             avatar_url,
+            avatar,
             coins,
             has_mod_installed,
             last_event_at,
@@ -321,6 +322,9 @@ export function registerPlayersViewRoute(app: Application): void {
             : null;
           view.avatarUrl = privacy.showProfile
             ? row.avatar_url ?? null
+            : null;
+          view.avatar = privacy.showProfile
+            ? row.avatar ?? null
             : null;
           view.coins = privacy.showCoins
             ? row.coins ?? null

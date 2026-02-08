@@ -5,6 +5,7 @@ create table if not exists public.players (
   id text primary key,
   name text not null,
   avatar_url text null,
+  avatar jsonb null,
   coins bigint not null default 0,
   last_event_at timestamptz null,
   created_at timestamptz not null default now(),
@@ -126,6 +127,31 @@ create index if not exists player_relationships_user_two_idx
 create index if not exists player_relationships_status_idx
   on public.player_relationships using btree (status);
 
+-- 7bis) TABLE direct_messages
+create table if not exists public.direct_messages (
+  id bigserial primary key,
+  conversation_id text not null,
+  sender_id text not null,
+  recipient_id text not null,
+  room_id text null,
+  body text not null,
+  created_at timestamptz not null default now(),
+  delivered_at timestamptz not null default now(),
+  read_at timestamptz null,
+  constraint direct_messages_sender_id_fkey
+    foreign key (sender_id) references public.players (id) on delete cascade,
+  constraint direct_messages_recipient_id_fkey
+    foreign key (recipient_id) references public.players (id) on delete cascade,
+  constraint direct_messages_room_id_fkey
+    foreign key (room_id) references public.rooms (id) on delete set null
+);
+
+create index if not exists direct_messages_conversation_idx
+  on public.direct_messages using btree (conversation_id, id);
+
+create index if not exists direct_messages_recipient_unread_idx
+  on public.direct_messages using btree (recipient_id, read_at, created_at);
+
 
 -- 8) TABLE rate_limit_usage
 create table if not exists public.rate_limit_usage (
@@ -148,6 +174,28 @@ create index if not exists rate_limit_usage_ip_idx
 
 create index if not exists rate_limit_usage_player_idx
   on public.rate_limit_usage using btree (player_id);
+
+-- 8bis) TABLE message_rate_limit_usage
+create table if not exists public.message_rate_limit_usage (
+  id bigserial primary key,
+  ip text null,
+  player_id text null,
+  bucket_start timestamptz not null,
+  hit_count integer not null default 1,
+  constraint message_rate_limit_usage_ip_bucket_unique
+    unique (ip, bucket_start),
+  constraint message_rate_limit_usage_player_bucket_unique
+    unique (player_id, bucket_start)
+);
+
+create index if not exists message_rate_limit_usage_bucket_idx
+  on public.message_rate_limit_usage using btree (bucket_start);
+
+create index if not exists message_rate_limit_usage_ip_idx
+  on public.message_rate_limit_usage using btree (ip);
+
+create index if not exists message_rate_limit_usage_player_idx
+  on public.message_rate_limit_usage using btree (player_id);
 
 
 -- 9) FUNCTION check_rate_limit (RPC Supabase réimplémenté)
@@ -206,6 +254,77 @@ begin
   if p_player_id is not null then
     select coalesce(sum(hit_count), 0) into v_player_count
     from public.rate_limit_usage
+    where player_id = p_player_id
+      and bucket_start = v_bucket;
+  else
+    v_player_count := 0;
+  end if;
+
+  if v_ip_count > p_ip_limit or v_player_count > p_player_limit then
+    return false;
+  end if;
+
+  return true;
+end;
+$$;
+
+
+-- 10) FUNCTION check_message_rate_limit
+create or replace function public.check_message_rate_limit(
+  p_ip text,
+  p_player_id text,
+  p_ip_limit integer default 120,
+  p_player_limit integer default 30
+)
+returns boolean
+language plpgsql
+as $$
+declare
+  v_bucket timestamptz := date_trunc('minute', now());
+  v_ip_count integer;
+  v_player_count integer;
+begin
+  -- blocage dur par IP
+  if p_ip is not null then
+    if exists (
+      select 1
+      from public.blocked_ips
+      where ip = p_ip
+    ) then
+      return false;
+    end if;
+  end if;
+
+  -- incrémenter / insérer usage IP
+  if p_ip is not null then
+    insert into public.message_rate_limit_usage (ip, bucket_start, hit_count)
+    values (p_ip, v_bucket, 1)
+    on conflict (ip, bucket_start) do update
+      set hit_count = message_rate_limit_usage.hit_count + 1;
+  end if;
+
+  -- incrémenter / insérer usage player
+  if p_player_id is not null then
+    insert into public.message_rate_limit_usage (player_id, bucket_start, hit_count)
+    values (p_player_id, v_bucket, 1)
+    on conflict (player_id, bucket_start) do update
+      set hit_count = message_rate_limit_usage.hit_count + 1;
+  end if;
+
+  -- compter usage IP
+  if p_ip is not null then
+    select coalesce(sum(hit_count), 0) into v_ip_count
+    from public.message_rate_limit_usage
+    where ip = p_ip
+      and bucket_start = v_bucket;
+  else
+    v_ip_count := 0;
+  end if;
+
+  -- compter usage player
+  if p_player_id is not null then
+    select coalesce(sum(hit_count), 0) into v_player_count
+    from public.message_rate_limit_usage
     where player_id = p_player_id
       and bucket_start = v_bucket;
   else

@@ -7,6 +7,7 @@ import { registerRoomsRoutes } from "./routes/rooms"
 import { registerFriendsRoutes } from "./routes/friends";       
 import { registerPlayersRoutes } from "./routes/players";
 import { registerAdminRoutes } from "./routes/admin";    
+import { registerMessagesRoutes } from "./routes/messages";
 
 dotenv.config();
 
@@ -23,4 +24,5 @@ registerCollectStateRoutes(app);
 registerRoomsRoutes(app);
 registerFriendsRoutes(app);
 registerPlayersRoutes(app);
+registerMessagesRoutes(app);
 registerAdminRoutes(app);

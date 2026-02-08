@@ -12,6 +12,7 @@ export function registerCollectStateRoute(app: Application): void {
       playerId: playerIdRaw,
       playerName,
       avatarUrl,
+      avatar,
       coins,
       room,
       state,
@@ -49,18 +50,36 @@ export function registerCollectStateRoute(app: Application): void {
       typeof modVersion === "string"
         ? modVersion.trim().slice(0, 64) || null
         : null;
+    let avatarValue: string[] | null = null;
+    if (
+      Array.isArray(avatar) &&
+      avatar.length === 4 &&
+      avatar.every(
+        (entry) =>
+          typeof entry === "string" && entry.trim().length > 0,
+      )
+    ) {
+      avatarValue = avatar.map((entry) =>
+        entry.trim().slice(0, 128),
+      );
+    }
+    const avatarJson =
+      avatarValue && avatarValue.length === 4
+        ? JSON.stringify(avatarValue)
+        : null;
 
     // 1) players : joueur local
     try {
       await query(
         `
         insert into public.players (
-          id, name, avatar_url, coins, last_event_at, has_mod_installed, mod_version
+          id, name, avatar_url, avatar, coins, last_event_at, has_mod_installed, mod_version
         )
-        values ($1,$2,$3,$4,$5,true,$6)
+        values ($1,$2,$3,$4::jsonb,$5,$6,true,$7)
         on conflict (id) do update set
           name = excluded.name,
           avatar_url = excluded.avatar_url,
+          avatar = coalesce(excluded.avatar, public.players.avatar),
           coins = excluded.coins,
           last_event_at = excluded.last_event_at,
           has_mod_installed = true,
@@ -75,6 +94,7 @@ export function registerCollectStateRoute(app: Application): void {
             ? playerName.trim()
             : pid,
           typeof avatarUrl === "string" ? avatarUrl : null,
+          avatarJson,
           typeof coins === "number" ? coins : 0,
           now,
           modVersionValue,

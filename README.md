@@ -18,6 +18,11 @@ Express + PostgreSQL API for Arie's mod. It ingests player state from the game c
   - `POST /friend-remove` – delete an accepted friendship.
   - `GET /list-friend-requests?playerId=` – incoming/outgoing pending requests.
   - `GET /list-friends?playerId=` – accepted friendships.
+- Messages
+  - `POST /messages/send` – send a DM (friends only).
+  - `GET /messages/thread?playerId=&otherPlayerId=` – message history.
+  - `POST /messages/read` – mark messages as read (batch).
+  - `GET /messages/stream?playerId=` – SSE stream for realtime updates.
 - Player views
   - `GET /get-player-view?playerId=&sections=` – detailed view for one player with optional section filtering.
   - `POST /get-players-view` – batched player views; accepts `{ playerIds, sections }`.
@@ -41,6 +46,8 @@ ADMIN_PASS=changeme
 ## Database Setup
 1) Apply schema and functions: `psql "$DATABASE_URL" -f schema.sql`  
 2) Apply indexes: `psql "$DATABASE_URL" -f migrations/002_indexes.sql`  
+3) Apply latest migrations: `psql "$DATABASE_URL" -f migrations/004_messages.sql`
+4) Apply latest migrations: `psql "$DATABASE_URL" -f migrations/005_player_avatar.sql`
 3) (Optional) `migrations/supabase_data.sql` contains sample data for local testing.
 
 Rate limiting depends on the `public.check_rate_limit` function and the `rate_limit_usage` table defined in `schema.sql`.
