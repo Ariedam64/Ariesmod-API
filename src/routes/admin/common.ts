@@ -62,6 +62,8 @@ export const REAL_TABLES = new Set<string>([
   "room_players",
   "blocked_ips",
   "rate_limit_usage",
+  "direct_messages",
+  "message_rate_limit_usage",
 ]);
 
 // Sources virtuelles de stats basées sur rate_limit_usage

@@ -16,6 +16,15 @@ create table if not exists public.players (
 create index if not exists players_name_idx
   on public.players using btree (name);
 
+create index if not exists players_created_at_idx
+  on public.players using btree (created_at desc);
+
+create index if not exists players_last_event_at_idx
+  on public.players using btree (last_event_at desc);
+
+create index if not exists players_coins_idx
+  on public.players using btree (coins desc);
+
 
 -- 2) TABLE blocked_ips
 create table if not exists public.blocked_ips (
@@ -42,6 +51,9 @@ create table if not exists public.rooms (
 create index if not exists room_last_updated_at_idx
   on public.rooms using btree (last_updated_at);
 
+create index if not exists rooms_created_at_idx
+  on public.rooms using btree (created_at desc);
+
 
 -- 4) TABLE room_players
 create table if not exists public.room_players (
@@ -61,6 +73,9 @@ create index if not exists room_players_player_id_idx
 
 create index if not exists room_players_room_id_idx
   on public.room_players using btree (room_id);
+
+create index if not exists room_players_room_joined_idx
+  on public.room_players using btree (room_id, joined_at);
 
 
 -- 5) TABLE player_state
@@ -127,6 +142,17 @@ create index if not exists player_relationships_user_two_idx
 create index if not exists player_relationships_status_idx
   on public.player_relationships using btree (status);
 
+create index if not exists player_relationships_status_created_idx
+  on public.player_relationships using btree (status, created_at desc);
+
+create index if not exists player_relationships_accepted_user_one_idx
+  on public.player_relationships using btree (user_one_id)
+  where status = 'accepted';
+
+create index if not exists player_relationships_accepted_user_two_idx
+  on public.player_relationships using btree (user_two_id)
+  where status = 'accepted';
+
 -- 7bis) TABLE direct_messages
 create table if not exists public.direct_messages (
   id bigserial primary key,
@@ -152,6 +178,12 @@ create index if not exists direct_messages_conversation_idx
 create index if not exists direct_messages_recipient_unread_idx
   on public.direct_messages using btree (recipient_id, read_at, created_at);
 
+create index if not exists direct_messages_created_idx
+  on public.direct_messages using btree (created_at desc);
+
+create index if not exists direct_messages_created_sender_idx
+  on public.direct_messages using btree (created_at desc, sender_id);
+
 
 -- 8) TABLE rate_limit_usage
 create table if not exists public.rate_limit_usage (
@@ -169,11 +201,24 @@ create table if not exists public.rate_limit_usage (
 create index if not exists rate_limit_usage_bucket_idx
   on public.rate_limit_usage using btree (bucket_start);
 
+create index if not exists rate_limit_usage_bucket_ip_idx
+  on public.rate_limit_usage using btree (bucket_start, ip)
+  where ip is not null;
+
+create index if not exists rate_limit_usage_bucket_player_idx
+  on public.rate_limit_usage using btree (bucket_start, player_id)
+  where player_id is not null;
+
 create index if not exists rate_limit_usage_ip_idx
   on public.rate_limit_usage using btree (ip);
 
 create index if not exists rate_limit_usage_player_idx
   on public.rate_limit_usage using btree (player_id);
+
+create index if not exists rate_limit_usage_player_bucket_desc_ip_idx
+  on public.rate_limit_usage using btree (player_id, bucket_start desc)
+  include (ip)
+  where ip is not null;
 
 -- 8bis) TABLE message_rate_limit_usage
 create table if not exists public.message_rate_limit_usage (

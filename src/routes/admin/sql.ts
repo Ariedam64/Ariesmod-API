@@ -50,51 +50,80 @@ export function registerAdminSqlAndToolsRoutes(app: Application): void {
     }
   });
 
-  // Lookup player (by id or name) + state + rate-limit summary
+  // Lookup player (by id or name) + lightweight metadata
   app.post(
     "/admin/form/player-lookup",
     adminAuth,
     async (req: Request, res: Response) => {
       const body = (req.body ?? {}) as {
+        query?: string;
+        filters?: string[];
+        // Legacy compat
         type?: string;
         value?: string;
-        playerId?: string | null; // compat ancien format
+        playerId?: string | null;
         name?: string | null;
       };
 
-      // Format normal: { type, value }
-      let type = body.type ?? "";
-      let value =
-        typeof body.value === "string" ? body.value.trim() : "";
+      let searchQuery =
+        typeof body.query === "string" ? body.query.trim() : "";
+      const filters = Array.isArray(body.filters) ? body.filters : [];
 
-      // Compat : si un jour tu envoies { playerId, name }
-      if (!type && (body.playerId || body.name)) {
-        if (body.playerId) {
-          type = "playerId";
-          value = String(body.playerId).trim();
-        } else if (body.name) {
-          type = "name";
-          value = String(body.name).trim();
-        }
+      // Legacy compat
+      if (!searchQuery && body.value) {
+        searchQuery = String(body.value).trim();
+      }
+      if (!searchQuery && body.playerId) {
+        searchQuery = String(body.playerId).trim();
+      }
+      if (!searchQuery && body.name) {
+        searchQuery = String(body.name).trim();
       }
 
-      if (!value || (type === "name" && value.length < 2)) {
+      const hasFilters = filters.length > 0;
+
+      if (!searchQuery && !hasFilters) {
         res.status(400).json({
-          error: "Provide playerId or name (at least 2 chars)",
+          error: "Provide a search query or at least one filter",
         });
         return;
       }
 
-      if (type !== "playerId" && type !== "name") {
-        res.status(400).json({ error: "Unknown lookup type" });
+      if (searchQuery && searchQuery.length < 2) {
+        res.status(400).json({ error: "Search must be at least 2 chars" });
         return;
       }
 
-      // Aligné avec TON schéma :
-      // players: id, name, avatar_url, coins, last_event_at, created_at, has_mod_installed
-      // player_state: player_id, garden, inventory, stats, updated_at, activity_log, journal
-      // rate_limit_usage: player_id, ip, bucket_start, hit_count
-      const baseSelect = `
+      // Optimized: removed heavy LATERAL joins, direct simple query
+      const whereParts: string[] = [];
+      const params: any[] = [];
+
+      if (searchQuery) {
+        params.push(searchQuery);
+        // Auto-detect: try exact ID match OR name LIKE
+        whereParts.push(
+          `(p.id = $${params.length} OR lower(p.name) like lower('%' || $${params.length} || '%'))`,
+        );
+      }
+
+      for (const f of filters) {
+        if (f === "online") {
+          whereParts.push(
+            `p.last_event_at >= now() - interval '5 minutes'`,
+          );
+        } else if (f === "has_mod") {
+          whereParts.push(`p.has_mod_installed = true`);
+        } else if (f === "new_week") {
+          whereParts.push(`p.created_at >= now() - interval '7 days'`);
+        }
+      }
+
+      const whereClause = whereParts.length
+        ? "where " + whereParts.join(" and ")
+        : "";
+
+      // Simplified fast query - just core player data
+      const sql = `
         select
           p.id as player_id,
           p.name,
@@ -103,59 +132,10 @@ export function registerAdminSqlAndToolsRoutes(app: Application): void {
           p.last_event_at,
           p.created_at,
           p.has_mod_installed,
-          rl_recent.ip as ip,
-          ps.garden,
-          ps.inventory,
-          ps.stats,
-          ps.activity_log,
-          ps.journal,
-          ps.updated_at as state_updated_at,
-          coalesce(rl.total_requests, 0) as total_requests,
-          cur_room.room_id as current_room_id,
-          cur_room.is_private as current_room_is_private
+          p.mod_version
         from public.players p
-        left join public.player_state ps
-          on ps.player_id = p.id
-        left join lateral (
-          select sum(hit_count) as total_requests
-          from public.rate_limit_usage
-          where player_id = p.id
-        ) rl on true
-        left join lateral (
-          select ip
-          from public.rate_limit_usage
-          where player_id = p.id
-            and ip is not null
-          order by bucket_start desc
-          limit 1
-        ) rl_recent on true
-        left join lateral (
-          select rp.room_id, r.is_private
-          from public.room_players rp
-          join public.rooms r on r.id = rp.room_id
-          where rp.player_id = p.id
-            and rp.left_at is null
-          order by rp.joined_at desc
-          limit 1
-        ) cur_room on true
-      `;
-
-
-      let whereClause: string;
-      const params: any[] = [];
-
-      if (type === "playerId") {
-        whereClause = "where p.id = $1";
-        params.push(value);
-      } else {
-        whereClause = "where lower(p.name) like lower('%' || $1 || '%')";
-        params.push(value);
-      }
-
-      const sql = `
-        ${baseSelect}
         ${whereClause}
-        order by p.created_at desc
+        order by p.last_event_at desc nulls last
         limit 50
       `;
 
@@ -216,6 +196,115 @@ export function registerAdminSqlAndToolsRoutes(app: Application): void {
     },
   );
 
+  // Room lookup
+  app.post(
+    "/admin/form/room-lookup",
+    adminAuth,
+    async (req: Request, res: Response) => {
+      const body = (req.body ?? {}) as { type?: string; value?: string };
+      const type = String(body.type ?? "").trim();
+      const value = String(body.value ?? "").trim();
+
+      if (!value) {
+        res.status(400).json({ error: "Provide a value" });
+        return;
+      }
+
+      if (type !== "roomId" && type !== "playerId") {
+        res.status(400).json({ error: "type must be roomId or playerId" });
+        return;
+      }
+
+      let sql: string;
+      const params: any[] = [value];
+
+      if (type === "roomId") {
+        sql = `
+          SELECT r.*,
+            (SELECT count(*)::integer FROM public.room_players rp
+             WHERE rp.room_id = r.id AND rp.left_at IS NULL) AS current_player_count
+          FROM public.rooms r
+          WHERE r.id ILIKE '%' || $1 || '%'
+          ORDER BY r.last_updated_at DESC NULLS LAST
+          LIMIT 50
+        `;
+      } else {
+        sql = `
+          SELECT DISTINCT r.*,
+            (SELECT count(*)::integer FROM public.room_players rp2
+             WHERE rp2.room_id = r.id AND rp2.left_at IS NULL) AS current_player_count
+          FROM public.rooms r
+          JOIN public.room_players rp ON rp.room_id = r.id
+          WHERE rp.player_id = $1
+          ORDER BY r.last_updated_at DESC NULLS LAST
+          LIMIT 50
+        `;
+      }
+
+      try {
+        const { rows } = await query(sql, params);
+        res.json({ rows });
+      } catch (err) {
+        console.error("[admin] room-lookup error:", err);
+        res.status(500).json({ error: "DB error" });
+      }
+    },
+  );
+
+  // Message lookup
+  app.post(
+    "/admin/form/message-lookup",
+    adminAuth,
+    async (req: Request, res: Response) => {
+      const body = (req.body ?? {}) as { type?: string; value?: string };
+      const type = String(body.type ?? "").trim();
+      const value = String(body.value ?? "").trim();
+
+      if (!value) {
+        res.status(400).json({ error: "Provide a value" });
+        return;
+      }
+
+      if (!["playerId", "conversationId", "content"].includes(type)) {
+        res
+          .status(400)
+          .json({ error: "type must be playerId, conversationId, or content" });
+        return;
+      }
+
+      const params: any[] = [value];
+      let whereClause: string;
+
+      if (type === "playerId") {
+        whereClause = "WHERE dm.sender_id = $1 OR dm.recipient_id = $1";
+      } else if (type === "conversationId") {
+        whereClause = "WHERE dm.conversation_id = $1";
+      } else {
+        whereClause = "WHERE dm.body ILIKE '%' || $1 || '%'";
+      }
+
+      const sql = `
+        SELECT dm.id, dm.conversation_id, dm.sender_id, dm.recipient_id,
+          dm.room_id, dm.body, dm.created_at, dm.read_at,
+          ps.name AS sender_name, pr.name AS recipient_name
+        FROM public.direct_messages dm
+        LEFT JOIN public.players ps ON ps.id = dm.sender_id
+        LEFT JOIN public.players pr ON pr.id = dm.recipient_id
+        ${whereClause}
+        ORDER BY dm.created_at DESC
+        LIMIT 50
+      `;
+
+      try {
+        const { rows } = await query(sql, params);
+        res.json({ rows });
+      } catch (err) {
+        console.error("[admin] message-lookup error:", err);
+        res.status(500).json({ error: "DB error" });
+      }
+    },
+  );
+
   // Rate-limit usage pour un playerId et/ou IP
   app.post(
     "/admin/form/rate-limit-player",
@@ -264,6 +353,102 @@ export function registerAdminSqlAndToolsRoutes(app: Application): void {
         res.json({ rows });
       } catch (err) {
         console.error("[admin] rate-limit-player error:", err);
+        res.status(500).json({ error: "DB error" });
+      }
+    },
+  );
+
+  // Mutual friends between two players
+  app.post(
+    "/admin/form/mutual-friends",
+    adminAuth,
+    async (req: Request, res: Response) => {
+      const body = (req.body ?? {}) as {
+        playerA?: string | null;
+        playerB?: string | null;
+      };
+
+      const playerA =
+        typeof body.playerA === "string" ? body.playerA.trim() : "";
+      const playerB =
+        typeof body.playerB === "string" ? body.playerB.trim() : "";
+
+      if (!playerA || !playerB) {
+        res
+          .status(400)
+          .json({ error: "Provide both playerA and playerB IDs" });
+        return;
+      }
+
+      const sql = `
+        select p.id, p.name, p.avatar_url, p.last_event_at
+        from public.players p
+        where p.id in (
+          select case when r.user_one_id = $1 then r.user_two_id else r.user_one_id end
+          from public.player_relationships r
+          where (r.user_one_id = $1 or r.user_two_id = $1)
+            and r.status = 'accepted'
+        )
+        and p.id in (
+          select case when r.user_one_id = $2 then r.user_two_id else r.user_one_id end
+          from public.player_relationships r
+          where (r.user_one_id = $2 or r.user_two_id = $2)
+            and r.status = 'accepted'
+        )
+        order by p.last_event_at desc nulls last
+        limit 100
+      `;
+
+      try {
+        const { rows } = await query(sql, [playerA, playerB]);
+        res.json({ rows });
+      } catch (err) {
+        console.error("[admin] mutual-friends error:", err);
+        res.status(500).json({ error: "DB error" });
+      }
+    },
+  );
+
+  // Conversation between two specific players
+  app.post(
+    "/admin/form/conversation-between",
+    adminAuth,
+    async (req: Request, res: Response) => {
+      const body = (req.body ?? {}) as {
+        playerA?: string | null;
+        playerB?: string | null;
+      };
+
+      const playerA =
+        typeof body.playerA === "string" ? body.playerA.trim() : "";
+      const playerB =
+        typeof body.playerB === "string" ? body.playerB.trim() : "";
+
+      if (!playerA || !playerB) {
+        res
+          .status(400)
+          .json({ error: "Provide both playerA and playerB IDs" });
+        return;
+      }
+
+      const sql = `
+        select dm.id, dm.conversation_id, dm.sender_id, dm.recipient_id,
+          dm.room_id, dm.body, dm.created_at, dm.read_at,
+          ps.name as sender_name, pr.name as recipient_name
+        from public.direct_messages dm
+        left join public.players ps on ps.id = dm.sender_id
+        left join public.players pr on pr.id = dm.recipient_id
+        where (dm.sender_id = $1 and dm.recipient_id = $2)
+           or (dm.sender_id = $2 and dm.recipient_id = $1)
+        order by dm.created_at desc
+        limit 50
+      `;
+
+      try {
+        const { rows } = await query(sql, [playerA, playerB]);
+        res.json({ rows });
+      } catch (err) {
+        console.error("[admin] conversation-between error:", err);
         res.status(500).json({ error: "DB error" });
       }
     },

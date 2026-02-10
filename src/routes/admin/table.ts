@@ -114,6 +114,10 @@ export function registerAdminTableRoutes(app: Application): void {
       orderClause = "order by bucket_start desc nulls last";
     } else if (table === "blocked_ips") {
       orderClause = "order by blocked_at desc nulls last";
+    } else if (table === "direct_messages") {
+      orderClause = "order by created_at desc nulls last";
+    } else if (table === "message_rate_limit_usage") {
+      orderClause = "order by bucket_start desc nulls last";
     }
 
     const sql = `
