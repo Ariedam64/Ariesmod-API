@@ -83,11 +83,13 @@ export function getStyles(): string {
   .chart-box{flex:1;min-width:0;display:flex;flex-direction:column}
   .np-wrap{height:100%;display:flex;flex-direction:column;gap:6px}
   .sec-chart{flex:1;min-height:120px;display:flex;flex-direction:column}
-  .sec-chart .bars{height:100%}
+  .sec-chart .bars{height:160px}
   @media(max-width:900px){
     .chart-row{flex-direction:column}
     .chart-info{width:auto;flex-direction:row;flex-wrap:wrap;gap:12px}
     .chart-info .ci{min-width:120px}
+    .sec-chart{min-height:160px}
+    .sec-chart .bars{height:160px}
   }
 
   /* TABLE */

@@ -140,6 +140,7 @@ export function registerAdminOverviewRoutes(app: Application): void {
       const [
         { rows: [players] },
         { rows: [rooms] },
+        { rows: [groups] },
         { rows: [social] },
         { rows: [msgs] },
         { rows: topPlayers },
@@ -154,6 +155,8 @@ export function registerAdminOverviewRoutes(app: Application): void {
         { rows: recentMessages },
         { rows: recentRequests },
         { rows: recentRooms },
+        { rows: recentGroupActivity },
+        { rows: recentGroupMessages },
       ] = await Promise.all([
         // 1. Players overview
         timedQuery("players", `
@@ -177,7 +180,16 @@ export function registerAdminOverviewRoutes(app: Application): void {
             count(*) FILTER (WHERE last_updated_at >= now() - interval '1 hour')::int AS active_1h
           FROM public.rooms
         `),
-        // 3. Social overview
+        // 3. Groups overview
+        timedQuery("groups", `
+          SELECT
+            count(*)::int AS total,
+            count(*) FILTER (WHERE created_at >= now() - interval '24 hours')::int AS new_24h,
+            count(*) FILTER (WHERE created_at >= now() - interval '7 days')::int AS new_7d,
+            count(*) FILTER (WHERE updated_at >= now() - interval '24 hours')::int AS updated_24h
+          FROM public.groups
+        `),
+        // 4. Social overview
         timedQuery("social", `
           SELECT
             count(*) FILTER (WHERE status = 'accepted')::int AS accepted,
@@ -188,7 +200,7 @@ export function registerAdminOverviewRoutes(app: Application): void {
               ELSE 0 END AS acceptance_rate
           FROM public.player_relationships
         `),
-        // 4. Messages
+        // 5. Messages
         timedQuery("messages", `
           SELECT
             count(*)::int AS total,
@@ -199,7 +211,7 @@ export function registerAdminOverviewRoutes(app: Application): void {
               ELSE 0 END AS read_rate
           FROM public.direct_messages
         `),
-        // 4. Top recently active players (no correlated subqueries)
+        // 6. Top recently active players (no correlated subqueries)
         timedQuery("top_players", `
           SELECT p.id, p.name, p.avatar_url, p.coins,
             p.last_event_at, p.has_mod_installed, p.mod_version
@@ -208,7 +220,7 @@ export function registerAdminOverviewRoutes(app: Application): void {
           ORDER BY p.last_event_at DESC
           LIMIT 10
         `),
-        // 5. New players per day (14 days) - split by mod
+        // 7. New players per day (14 days) - split by mod
         timedQuery("new_players_14d", `
           WITH days AS (
             SELECT generate_series(
@@ -224,23 +236,23 @@ export function registerAdminOverviewRoutes(app: Application): void {
           LEFT JOIN public.players p ON date_trunc('day', p.created_at) = d.day
           GROUP BY d.day ORDER BY d.day ASC
         `),
-        // 6. Blocked IPs
+        // 8. Blocked IPs
         timedQuery("blocked_ips", `SELECT count(*)::int AS total FROM public.blocked_ips`),
-        // 7. Rate limit 24h
+        // 9. Rate limit 24h
         getRateLimit24h(),
-        // 8. Recent players
+        // 10. Recent players
         timedQuery("recent_players", `
           SELECT id, name, avatar_url, has_mod_installed, mod_version, created_at
           FROM public.players ORDER BY created_at DESC LIMIT 10
         `),
-        // 10. Richest players
+        // 11. Richest players
         timedQuery("richest_players", `
           SELECT id, name, avatar_url, coins, has_mod_installed, mod_version
           FROM public.players
           ORDER BY coins DESC NULLS LAST
           LIMIT 10
         `),
-        // 11. Most relationships (accepted)
+        // 12. Most relationships (accepted)
         timedQuery("top_relationships", `
           WITH rels AS (
             SELECT user_one_id AS player_id
@@ -258,7 +270,7 @@ export function registerAdminOverviewRoutes(app: Application): void {
           ORDER BY rel_count DESC
           LIMIT 10
         `),
-        // 12. Top talkers (messages sent, last 7 days)
+        // 13. Top talkers (messages sent, last 7 days)
         timedQuery("top_talkers", `
           SELECT p.id, p.name, p.avatar_url, count(*)::int AS msg_count
           FROM public.direct_messages dm
@@ -268,9 +280,9 @@ export function registerAdminOverviewRoutes(app: Application): void {
           ORDER BY msg_count DESC
           LIMIT 10
         `),
-        // 13. Requests per hour (last 24 hours)
+        // 14. Requests per hour (last 24 hours)
         getRequests24h(),
-        // 14. Recent messages
+        // 15. Recent messages
         timedQuery("recent_messages", `
           SELECT dm.id, dm.sender_id, dm.recipient_id, dm.body, dm.created_at,
             ps.name AS sender_name, pr.name AS recipient_name
@@ -280,7 +292,7 @@ export function registerAdminOverviewRoutes(app: Application): void {
           ORDER BY dm.created_at DESC
           LIMIT 10
         `),
-        // 15. Recent friend requests (pending + accepted)
+        // 16. Recent friend requests (pending + accepted)
         timedQuery("recent_requests", `
           SELECT r.status, r.created_at,
             p1.name AS user_one_name, p1.id AS user_one_id,
@@ -291,7 +303,7 @@ export function registerAdminOverviewRoutes(app: Application): void {
           WHERE r.status IN ('pending','accepted')
           ORDER BY r.created_at DESC LIMIT 10
         `),
-        // 16. Recent rooms (with creator)
+        // 17. Recent rooms (with creator)
         timedQuery("recent_rooms", `
           SELECT r.id, r.is_private, r.players_count, r.created_at,
             c.player_id AS creator_id,
@@ -306,6 +318,35 @@ export function registerAdminOverviewRoutes(app: Application): void {
             LIMIT 1
           ) c ON true
           ORDER BY r.created_at DESC
+          LIMIT 10
+        `),
+        // 18. Recent group activity
+        timedQuery("recent_group_activity", `
+          SELECT ga.id, ga.group_id, ga.group_name, ga.type, ga.actor_id, ga.member_id,
+            ga.meta, ga.created_at,
+            pa.name AS actor_name,
+            pm.name AS member_name
+          FROM public.group_activity ga
+          LEFT JOIN public.players pa ON pa.id = ga.actor_id
+          LEFT JOIN public.players pm ON pm.id = ga.member_id
+          ORDER BY ga.created_at DESC
+          LIMIT 12
+        `),
+        // 19. Recent group messages (all groups)
+        timedQuery("recent_group_messages", `
+          SELECT gm.id, gm.group_id, gm.sender_id, gm.body, gm.created_at,
+            g.name AS group_name,
+            p.name AS sender_name,
+            cnt.member_count
+          FROM public.group_messages gm
+          LEFT JOIN public.groups g ON g.id = gm.group_id
+          LEFT JOIN public.players p ON p.id = gm.sender_id
+          LEFT JOIN LATERAL (
+            SELECT count(*)::int AS member_count
+            FROM public.group_members gm2
+            WHERE gm2.group_id = gm.group_id
+          ) cnt ON true
+          ORDER BY gm.created_at DESC
           LIMIT 10
         `),
       ]);
@@ -327,6 +368,12 @@ export function registerAdminOverviewRoutes(app: Application): void {
           public: toNumber(rooms?.public),
           private: toNumber(rooms?.private),
           active_1h: toNumber(rooms?.active_1h),
+        },
+        groups: {
+          total: toNumber(groups?.total),
+          new_24h: toNumber(groups?.new_24h),
+          new_7d: toNumber(groups?.new_7d),
+          updated_24h: toNumber(groups?.updated_24h),
         },
         social: {
           accepted: toNumber(social?.accepted),
@@ -394,6 +441,28 @@ export function registerAdminOverviewRoutes(app: Application): void {
           created_at: r.created_at,
           creator_id: r.creator_id,
           creator_name: r.creator_name,
+        })),
+        recent_group_activity: (recentGroupActivity ?? []).map((r: any) => ({
+          id: toNumber(r.id),
+          group_id: r.group_id == null ? null : Number(r.group_id),
+          group_name: r.group_name,
+          type: r.type,
+          actor_id: r.actor_id,
+          actor_name: r.actor_name,
+          member_id: r.member_id,
+          member_name: r.member_name,
+          meta: r.meta ?? null,
+          created_at: r.created_at,
+        })),
+        recent_group_messages: (recentGroupMessages ?? []).map((r: any) => ({
+          id: toNumber(r.id),
+          group_id: r.group_id == null ? null : Number(r.group_id),
+          group_name: r.group_name,
+          sender_id: r.sender_id,
+          sender_name: r.sender_name,
+          body: r.body,
+          created_at: r.created_at,
+          member_count: toNumber(r.member_count),
         })),
         richest_players: (richestPlayers ?? []).map((r: any) => ({
           id: r.id, name: r.name, avatar_url: r.avatar_url,

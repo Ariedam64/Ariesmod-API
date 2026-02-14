@@ -60,6 +60,8 @@ export function registerPlayerViewRoute(app: Application): void {
       !sectionsSet || sectionsSet.has("activityLog");
     const wantJournal = !sectionsSet || sectionsSet.has("journal");
     const wantRoom = !sectionsSet || sectionsSet.has("room");
+    const wantLeaderboard =
+      !sectionsSet || sectionsSet.has("leaderboard");
 
     // 1) players
     let player: any = null;
@@ -211,10 +213,78 @@ export function registerPlayerViewRoute(app: Application): void {
             `,
             [rpRow.room_id],
           );
-          room = roomRows[0] ?? null;
+          const roomData = roomRows[0] ?? null;
+          // Don't show room if it's private
+          room = roomData && roomData.is_private ? null : roomData;
         }
       } catch (err) {
         console.error("get-player-view room error:", err);
+      }
+    }
+
+    // 4b) leaderboard ranks
+    let coinsRank: { rank: number; total: number } | null = null;
+    let eggsRank: { rank: number; total: number } | null = null;
+    if (wantLeaderboard && (privacy.showCoins || privacy.showStats)) {
+      try {
+        if (privacy.showCoins) {
+          const { rows } = await query(
+            `
+            with ranked as (
+              select
+                ls.player_id,
+                ls.coins,
+                row_number() over (
+                  order by ls.coins desc, p.created_at desc
+                ) as rank
+              from public.leaderboard_stats ls
+              join public.players p on p.id = ls.player_id
+            )
+            select rank, coins
+            from ranked
+            where player_id = $1
+            limit 1
+            `,
+            [playerId],
+          );
+          const row = rows[0];
+          if (row) {
+            coinsRank = {
+              rank: Number(row.rank ?? 0),
+              total: Number(row.coins ?? 0),
+            };
+          }
+        }
+        if (privacy.showStats) {
+          const { rows } = await query(
+            `
+            with ranked as (
+              select
+                ls.player_id,
+                ls.eggs_hatched,
+                row_number() over (
+                  order by ls.eggs_hatched desc, p.created_at desc
+                ) as rank
+              from public.leaderboard_stats ls
+              join public.players p on p.id = ls.player_id
+            )
+            select rank, eggs_hatched
+            from ranked
+            where player_id = $1
+            limit 1
+            `,
+            [playerId],
+          );
+          const row = rows[0];
+          if (row) {
+            eggsRank = {
+              rank: Number(row.rank ?? 0),
+              total: Number(row.eggs_hatched ?? 0),
+            };
+          }
+        }
+      } catch (err) {
+        console.error("get-player-view leaderboard error:", err);
       }
     }
 
@@ -248,6 +318,12 @@ export function registerPlayerViewRoute(app: Application): void {
       isOnline,
       lastEventAt,
       privacy: wantProfile ? privacy : DEFAULT_PRIVACY,
+      leaderboard: wantLeaderboard
+        ? {
+            coins: privacy.showCoins ? coinsRank : null,
+            eggsHatched: privacy.showStats ? eggsRank : null,
+          }
+        : null,
       state: {
         garden:
           wantGarden && privacy.showGarden ? st.garden ?? null : null,

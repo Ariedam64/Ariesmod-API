@@ -1,7 +1,7 @@
 import { query } from "../../db";
 
 export const MESSAGE_MAX_LENGTH = 1000;
-export const CONNECTED_TTL_MS = 7 * 60 * 1000;
+export const CONNECTED_TTL_MS = 6 * 60 * 1000; // 6 minutes
 
 export function normalizeId(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";

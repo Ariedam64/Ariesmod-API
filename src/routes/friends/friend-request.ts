@@ -2,17 +2,19 @@ import type { Application, Request, Response } from "express";
 import { query } from "../../db";
 import { getIp } from "../../lib/ip";
 import { checkRateLimit } from "../../lib/rateLimit";
-import { pushRequestEvent } from "./requests-stream-hub";
+import { pushUnifiedEvent } from "../events/hub";
+import { requireApiKey } from "../../middleware/auth";
 
 export function registerFriendRequestRoute(app: Application): void {
 
-app.post("/friend-request", async (req: Request, res: Response) => {
+app.post("/friend-request", requireApiKey, async (req: Request, res: Response) => {
     const ip = getIp(req);
     const body: any = req.body ?? {};
-    const { fromPlayerId, toPlayerId } = body;
+    const fromPlayerId = req.authenticatedPlayerId!;
+    const { toPlayerId } = body;
 
     if (
-      typeof fromPlayerId !== "string" ||
+      !fromPlayerId ||
       typeof toPlayerId !== "string" ||
       fromPlayerId.length < 3 ||
       toPlayerId.length < 3
@@ -127,14 +129,35 @@ app.post("/friend-request", async (req: Request, res: Response) => {
         [userOneId, userTwoId, fromPlayerId],
       );
 
+      // Récupérer les infos des deux joueurs
+      const { rows: playerInfo } = await query<{
+        id: string;
+        name: string | null;
+        avatar_url: string | null;
+      }>(
+        `
+        select id, name, avatar_url
+        from public.players
+        where id = any($1::text[])
+        `,
+        [[fromPlayerId, toPlayerId]],
+      );
+
+      const fromPlayer = playerInfo.find((p) => p.id === fromPlayerId);
+      const toPlayer = playerInfo.find((p) => p.id === toPlayerId);
+
       const payload = {
         requesterId: fromPlayerId,
+        requesterName: fromPlayer?.name ?? fromPlayerId,
+        requesterAvatarUrl: fromPlayer?.avatar_url ?? null,
         targetId: toPlayerId,
+        targetName: toPlayer?.name ?? toPlayerId,
+        targetAvatarUrl: toPlayer?.avatar_url ?? null,
         createdAt: now,
       };
 
-      pushRequestEvent(toPlayerId, "friend_request", payload);
-      pushRequestEvent(fromPlayerId, "friend_request", payload);
+      pushUnifiedEvent(toPlayerId, "friend_request", payload);
+      pushUnifiedEvent(fromPlayerId, "friend_request", payload);
     } catch (err) {
       console.error("friend-request insert error:", err);
       return res.status(500).send("DB error (create request)");

@@ -1,0 +1,1 @@
+export { registerDiscordAuthRoutes } from "./discord";

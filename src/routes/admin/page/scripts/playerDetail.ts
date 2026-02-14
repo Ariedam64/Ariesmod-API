@@ -1,6 +1,6 @@
 export function getPlayerDetailScript(): string {
   return `
-var _chatPid='',_chatLoaded=false,_chatHdl=null;
+var _chatPid='',_chatLoaded=false,_grpLoaded=false,_chatHdl=null;
 async function ldConv(pid){
   var panel=V.querySelector('.tp[data-t="messages"]');
   if(!panel)return;
@@ -35,11 +35,12 @@ async function ldConv(pid){
   }
 }
 async function ldChat(pid,oid,nm){
-  var ms=V.querySelector('.cht-ms');
+  var panel=V.querySelector('.tp[data-t="messages"]');
+  var ms=panel?panel.querySelector('.cht-ms'):null;
   if(!ms)return;
   ms.innerHTML='<div class="cht-hd">'+pl(oid,nm)+'</div><div class="cht-bd">'+skel(3)+'</div>';
-  V.querySelectorAll('.cht-ci').forEach(function(c){c.classList.remove('on')});
-  var active=V.querySelector('.cht-ci[data-oid="'+oid+'"]');
+  if(panel)panel.querySelectorAll('.cht-ci').forEach(function(c){c.classList.remove('on')});
+  var active=panel?panel.querySelector('.cht-ci[data-oid="'+oid+'"]'):null;
   if(active)active.classList.add('on');
   try{
     var d=await gj('/admin/player/'+encodeURIComponent(pid)+'/messages/'+encodeURIComponent(oid),{_na:true});
@@ -52,6 +53,79 @@ async function ldChat(pid,oid,nm){
       var m=msgs[i],isSnd=m.sender_id===pid;
       x+='<div class="bbl '+(isSnd?'bbl-s':'bbl-r')+'">'+h(m.body)+'</div>';
       x+='<div class="bbl-ts'+(isSnd?' s':'')+'">'+fd(m.created_at)+(m.read_at?' \\u2713':'')+'</div>';
+    }
+    bd.innerHTML=x;
+    bd.scrollTop=bd.scrollHeight;
+  }catch(e){
+    if(e.name==='AbortError')return;
+    var bd=ms.querySelector('.cht-bd');
+    if(bd)bd.innerHTML='<div class="em">Error loading messages</div>';
+  }
+}
+
+async function ldGroups(pid){
+  var panel=V.querySelector('.tp[data-t="groups"]');
+  if(!panel)return;
+  panel.innerHTML=skel(5);
+  try{
+    var d=await gj('/admin/player/'+encodeURIComponent(pid)+'/groups',{_na:true});
+    var groups=d.groups||[];
+    _chatPid=pid;
+    var tb=V.querySelector('.tab[data-t="groups"] .tb');if(tb)tb.textContent=String(groups.length);
+    if(!groups.length){panel.innerHTML='<div class="em">No groups</div>';return}
+    var x='<div class="cht"><div class="cht-ls">';
+    for(var i=0;i<groups.length;i++){
+      var g=groups[i];
+      var gname=g.group_name||('Group '+g.group_id);
+      var init=(gname||'?').charAt(0).toUpperCase();
+      var preview='No messages';
+      if(g.last_body){
+        var snd=g.last_sender_name||g.last_sender_id||'';
+        preview=(snd? (snd+': '):'')+g.last_body;
+      }
+      x+='<div class="cht-ci" data-gid="'+h(g.group_id)+'" data-gnm="'+h(gname)+'" data-mct="'+h(String(g.member_count||0))+'">';
+      x+='<div class="cht-ci-av"><span>'+h(init)+'</span></div>';
+      x+='<div style="flex:1;min-width:0"><div class="cht-ci-nm">'+h(gname)+'</div>';
+      x+='<div class="cht-ci-pr">'+h(preview)+'</div></div>';
+      x+='<div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px">';
+      x+='<span class="cht-ci-ts">'+(g.last_at?fa(g.last_at):'')+'</span>';
+      x+='<span class="cht-ci-ct">'+(g.member_count||0)+'</span></div></div>';
+    }
+    x+='</div><div class="cht-ms"><div class="cht-empty">Select a group</div></div></div>';
+    panel.innerHTML=x;
+  }catch(e){
+    if(e.name==='AbortError')return;
+    _grpLoaded=false;
+    panel.innerHTML='<div class="em">Error loading groups</div>';
+  }
+}
+
+async function ldGroupChat(pid,gid,gnm){
+  var panel=V.querySelector('.tp[data-t="groups"]');
+  var ms=panel?panel.querySelector('.cht-ms'):null;
+  if(!ms)return;
+  ms.innerHTML='<div class="cht-hd">'+h(gnm||('Group '+gid))+'</div><div class="cht-bd">'+skel(3)+'</div>';
+  if(panel)panel.querySelectorAll('.cht-ci').forEach(function(c){c.classList.remove('on')});
+  var active=panel?panel.querySelector('.cht-ci[data-gid="'+gid+'"]'):null;
+  if(active)active.classList.add('on');
+  try{
+    var d=await gj('/admin/player/'+encodeURIComponent(pid)+'/group-messages/'+encodeURIComponent(gid),{_na:true});
+    var msgs=d.messages||[];
+    var g=d.group||{};
+    var name=g.name||gnm||('Group '+gid);
+    var mct=(g.member_count!=null?g.member_count:(active&&active.dataset.mct?Number(active.dataset.mct):null));
+    var hd=ms.querySelector('.cht-hd');
+    if(hd)hd.innerHTML=h(name)+(mct!=null?'<span style="margin-left:auto" class="bd">'+fn(mct)+' members</span>':'');
+    var bd=ms.querySelector('.cht-bd');
+    if(!bd)return;
+    if(!msgs.length){bd.innerHTML='<div class="cht-empty">No messages</div>';return}
+    var list=msgs.slice().reverse();
+    var x='';
+    for(var i=0;i<list.length;i++){
+      var m=list[i],isSnd=m.sender_id===pid;
+      var sender=m.sender_name||m.sender_id||'Unknown';
+      x+='<div class="bbl '+(isSnd?'bbl-s':'bbl-r')+'">'+h(m.body)+'</div>';
+      x+='<div class="bbl-ts'+(isSnd?' s':'')+'">'+h(sender)+' \\u00b7 '+fd(m.created_at)+'</div>';
     }
     bd.innerHTML=x;
     bd.scrollTop=bd.scrollHeight;
@@ -84,7 +158,7 @@ function bPl(d,id){
 
   var fields=['garden','inventory','stats','activity_log','journal'];
   var stc=0;if(st){for(var i=0;i<fields.length;i++)if(st['has_'+fields[i]])stc++}
-  var tabs=[{id:'state',l:'State',b:stc},{id:'privacy',l:'Privacy'},{id:'friends',l:'Friends',b:rels.length},{id:'rooms',l:'Rooms',b:rms.length},{id:'messages',l:'Messages',b:0},{id:'limits',l:'Rate Limits',b:rlb.length+mrlb.length}];
+  var tabs=[{id:'state',l:'State',b:stc},{id:'privacy',l:'Privacy'},{id:'friends',l:'Friends',b:rels.length},{id:'rooms',l:'Rooms',b:rms.length},{id:'groups',l:'Groups',b:0},{id:'messages',l:'Messages',b:0},{id:'limits',l:'Rate Limits',b:rlb.length+mrlb.length}];
   x+='<div>'+mkTabs(tabs,'state');
 
   x+='<div class="tp" data-t="state">';
@@ -129,6 +203,10 @@ function bPl(d,id){
   x+='<div class="cht-empty" style="padding:40px">Loading conversations...</div>';
   x+='</div>';
 
+  x+='<div class="tp" data-t="groups" style="display:none">';
+  x+='<div class="cht-empty" style="padding:40px">Loading groups...</div>';
+  x+='</div>';
+
   x+='<div class="tp" data-t="limits" style="display:none">';
   if(rlb.length)x+=mkCo('API Rate Limits',rlb.length+' buckets',mkT(rlb,{}),false);
   if(mrlb.length)x+=mkCo('Message Rate Limits',mrlb.length+' buckets',mkT(mrlb,{}),rlb.length>0);
@@ -153,17 +231,20 @@ function bPl(d,id){
     });
   });
 
-  _chatLoaded=false;_chatPid=id;
+  _chatLoaded=false;_grpLoaded=false;_chatPid=id;
   if(_chatHdl)V.removeEventListener('click',_chatHdl);
   _chatHdl=function(e){
     var tb=e.target.closest('.tab[data-t="messages"]');
     if(tb&&!_chatLoaded){_chatLoaded=true;ldConv(_chatPid)}
+    var tg=e.target.closest('.tab[data-t="groups"]');
+    if(tg&&!_grpLoaded){_grpLoaded=true;ldGroups(_chatPid)}
     var ci=e.target.closest('.cht-ci');
     if(ci&&ci.dataset.oid){ldChat(_chatPid,ci.dataset.oid,ci.dataset.onm||ci.dataset.oid)}
+    if(ci&&ci.dataset.gid){ldGroupChat(_chatPid,ci.dataset.gid,ci.dataset.gnm||('Group '+ci.dataset.gid))}
   };
   V.addEventListener('click',_chatHdl);
-  _chatLoaded=true;
-  setTimeout(function(){if(_s==='player')ldConv(_chatPid)},0);
+  _chatLoaded=true;_grpLoaded=true;
+  setTimeout(function(){if(_s==='player'){ldConv(_chatPid);ldGroups(_chatPid)}},0);
 }
 `;
 }

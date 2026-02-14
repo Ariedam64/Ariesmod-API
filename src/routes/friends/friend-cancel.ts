@@ -2,14 +2,20 @@ import type { Application, Request, Response } from "express";
 import { query } from "../../db";
 import { getIp } from "../../lib/ip";
 import { checkRateLimit } from "../../lib/rateLimit";
-import { pushRequestEvent } from "./requests-stream-hub";
+import { pushUnifiedEvent } from "../events/hub";
+import { requireApiKey } from "../../middleware/auth";
 
 export function registerFriendCancelRoute(app: Application): void {
 
-app.post("/friend-cancel", async (req: Request, res: Response) => {
+app.post("/friend-cancel", requireApiKey, async (req: Request, res: Response) => {
     const ip = getIp(req);
     const body: any = req.body ?? {};
-    const { playerId, otherPlayerId } = body;
+    const playerId = req.authenticatedPlayerId!;
+    const { otherPlayerId } = body;
+
+    console.log(`[friend-cancel] playerId from token: ${playerId} (type: ${typeof playerId})`);
+    console.log(`[friend-cancel] otherPlayerId from body: ${otherPlayerId} (type: ${typeof otherPlayerId})`);
+    console.log(`[friend-cancel] body:`, body);
 
     if (
       typeof playerId !== "string" ||
@@ -17,6 +23,7 @@ app.post("/friend-cancel", async (req: Request, res: Response) => {
       playerId.length < 3 ||
       otherPlayerId.length < 3
     ) {
+      console.log(`[friend-cancel] Validation failed - returning 400`);
       return res.status(400).send("Invalid player ids");
     }
 
@@ -88,14 +95,46 @@ app.post("/friend-cancel", async (req: Request, res: Response) => {
       return res.status(500).send("DB error (relationship delete)");
     }
 
+    // Récupérer les infos des deux joueurs
+    let playerInfo: Array<{
+      id: string;
+      name: string | null;
+      avatar_url: string | null;
+    }> = [];
+
+    try {
+      const { rows } = await query<{
+        id: string;
+        name: string | null;
+        avatar_url: string | null;
+      }>(
+        `
+        select id, name, avatar_url
+        from public.players
+        where id = any($1::text[])
+        `,
+        [[playerId, otherPlayerId]],
+      );
+      playerInfo = rows ?? [];
+    } catch (err) {
+      console.error("friend-cancel player info error:", err);
+    }
+
+    const requester = playerInfo.find((p) => p.id === playerId);
+    const target = playerInfo.find((p) => p.id === otherPlayerId);
+
     const now = new Date().toISOString();
     const payload = {
       requesterId: playerId,
+      requesterName: requester?.name ?? playerId,
+      requesterAvatarUrl: requester?.avatar_url ?? null,
       targetId: otherPlayerId,
+      targetName: target?.name ?? otherPlayerId,
+      targetAvatarUrl: target?.avatar_url ?? null,
       cancelledAt: now,
     };
-    pushRequestEvent(playerId, "friend_cancelled", payload);
-    pushRequestEvent(otherPlayerId, "friend_cancelled", payload);
+    pushUnifiedEvent(playerId, "friend_cancelled", payload);
+    pushUnifiedEvent(otherPlayerId, "friend_cancelled", payload);
 
     return res.status(204).send();
   });

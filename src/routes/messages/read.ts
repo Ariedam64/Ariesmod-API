@@ -8,13 +8,14 @@ import {
   isPlayerConnected,
   normalizeId,
 } from "./common";
-import { pushEvent } from "./streamHub";
+import { pushUnifiedEvent } from "../events/hub";
+import { requireApiKey } from "../../middleware/auth";
 
 export function registerMessagesReadRoute(app: Application): void {
-  app.post("/messages/read", async (req: Request, res: Response) => {
+  app.post("/messages/read", requireApiKey, async (req: Request, res: Response) => {
     const ip = getIp(req);
     const body: any = req.body ?? {};
-    const playerId = normalizeId(body.playerId);
+    const playerId = req.authenticatedPlayerId!;
     const otherPlayerId = normalizeId(body.otherPlayerId);
     const upToIdRaw = body.upToId;
     const upToId = Number(upToIdRaw);
@@ -90,8 +91,8 @@ export function registerMessagesReadRoute(app: Application): void {
           upToId,
           readAt: now,
         };
-        pushEvent(otherPlayerId, "read", payload);
-        pushEvent(playerId, "read", payload);
+        pushUnifiedEvent(otherPlayerId, "read", payload);
+        pushUnifiedEvent(playerId, "read", payload);
       }
 
       return res.status(200).json({ updated: rows.length });

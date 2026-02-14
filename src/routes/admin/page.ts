@@ -10,6 +10,9 @@ import { getSqlScript } from "./page/scripts/sql";
 import { getSearchScript } from "./page/scripts/search";
 import { getPlayerDetailScript } from "./page/scripts/playerDetail";
 import { getRoomDetailScript } from "./page/scripts/roomDetail";
+import { getGroupDetailScript } from "./page/scripts/groupDetail";
+import { getRoomsViewScript } from "./page/scripts/roomsView";
+import { getGroupsViewScript } from "./page/scripts/groupsView";
 
 let _cachedHtml: string | null = null;
 
@@ -39,6 +42,9 @@ function buildAdminHtml(): string {
     ${getSearchScript()}
     ${getPlayerDetailScript()}
     ${getRoomDetailScript()}
+    ${getGroupDetailScript()}
+    ${getRoomsViewScript()}
+    ${getGroupsViewScript()}
 
     rt();
   })();

@@ -2,17 +2,14 @@ import type { Application, Request, Response } from "express";
 import { query } from "../../db";
 import { getIp } from "../../lib/ip";
 import { checkRateLimit } from "../../lib/rateLimit";
-import { isPlayerConnected } from "../messages/common";
+import { requireApiKey } from "../../middleware/auth";
+import { CONNECTED_TTL_MS } from "../messages/common";
 
 export function registerListFriendsRoute(app: Application): void {
 
-  app.get("/list-friends", async (req: Request, res: Response) => {
+  app.get("/list-friends", requireApiKey, async (req: Request, res: Response) => {
     const ip = getIp(req);
-    const playerId = String(req.query.playerId ?? "").trim();
-
-    if (!playerId || playerId.length < 3) {
-      return res.status(400).send("Invalid playerId");
-    }
+    const playerId = req.authenticatedPlayerId!;
 
     try {
       const allowed = await checkRateLimit(ip, playerId, 300, 120);
@@ -22,16 +19,6 @@ export function registerListFriendsRoute(app: Application): void {
     } catch (err) {
       console.error("list-friends rate limit error:", err);
       return res.status(500).send("Rate limiter error");
-    }
-
-    try {
-      const connected = await isPlayerConnected(playerId);
-      if (!connected) {
-        return res.status(403).send("Player not connected");
-      }
-    } catch (err) {
-      console.error("list-friends connected check error:", err);
-      return res.status(500).send("DB error (connected check)");
     }
 
     try {
@@ -70,14 +57,21 @@ export function registerListFriendsRoute(app: Application): void {
         [playerId],
       );
 
-      const friends = (rows ?? []).map((row) => ({
-        playerId: row.id,
-        name: row.name ?? row.id,
-        avatarUrl: row.avatar_url ?? null,
-        avatar: row.avatar ?? null,
-        lastEventAt: row.last_event_at ?? null,
-        roomId: row.room_id && !row.is_private ? row.room_id : null,
-      }));
+      const now = Date.now();
+      const friends = (rows ?? []).map((row) => {
+        const lastEventTs = row.last_event_at ? Date.parse(row.last_event_at) : null;
+        const isOnline = lastEventTs !== null && now - lastEventTs <= CONNECTED_TTL_MS;
+
+        return {
+          playerId: row.id,
+          name: row.name ?? row.id,
+          avatarUrl: row.avatar_url ?? null,
+          avatar: row.avatar ?? null,
+          lastEventAt: row.last_event_at ?? null,
+          roomId: row.room_id && !row.is_private ? row.room_id : null,
+          isOnline,
+        };
+      });
 
       return res.status(200).json({ playerId, friends });
     } catch (err) {

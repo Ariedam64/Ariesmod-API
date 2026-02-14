@@ -2,17 +2,19 @@ import type { Application, Request, Response } from "express";
 import { query } from "../../db";
 import { getIp } from "../../lib/ip";
 import { checkRateLimit } from "../../lib/rateLimit";
-import { pushRequestEvent } from "./requests-stream-hub";
+import { pushUnifiedEvent } from "../events/hub";
+import { requireApiKey } from "../../middleware/auth";
 
 export function registerFriendRespondRoute(app: Application): void {
 
-app.post("/friend-respond", async (req: Request, res: Response) => {
+app.post("/friend-respond", requireApiKey, async (req: Request, res: Response) => {
     const ip = getIp(req);
     const body: any = req.body ?? {};
-    const { playerId, otherPlayerId, action } = body;
+    const playerId = req.authenticatedPlayerId!;
+    const { otherPlayerId, action } = body;
 
     if (
-      typeof playerId !== "string" ||
+      !playerId ||
       typeof otherPlayerId !== "string" ||
       playerId.length < 3 ||
       otherPlayerId.length < 3
@@ -82,6 +84,34 @@ app.post("/friend-respond", async (req: Request, res: Response) => {
 
     const now = new Date().toISOString();
 
+    // Récupérer les infos des deux joueurs
+    let playerInfo: Array<{
+      id: string;
+      name: string | null;
+      avatar_url: string | null;
+    }> = [];
+
+    try {
+      const { rows } = await query<{
+        id: string;
+        name: string | null;
+        avatar_url: string | null;
+      }>(
+        `
+        select id, name, avatar_url
+        from public.players
+        where id = any($1::text[])
+        `,
+        [[rel.requested_by, playerId]],
+      );
+      playerInfo = rows ?? [];
+    } catch (err) {
+      console.error("friend-respond player info error:", err);
+    }
+
+    const requester = playerInfo.find((p) => p.id === rel.requested_by);
+    const responder = playerInfo.find((p) => p.id === playerId);
+
     if (action === "reject") {
       try {
         await query(
@@ -99,12 +129,16 @@ app.post("/friend-respond", async (req: Request, res: Response) => {
 
       const payload = {
         requesterId: rel.requested_by,
+        requesterName: requester?.name ?? rel.requested_by,
+        requesterAvatarUrl: requester?.avatar_url ?? null,
         responderId: playerId,
+        responderName: responder?.name ?? playerId,
+        responderAvatarUrl: responder?.avatar_url ?? null,
         action,
         updatedAt: now,
       };
-      pushRequestEvent(rel.requested_by, "friend_response", payload);
-      pushRequestEvent(playerId, "friend_response", payload);
+      pushUnifiedEvent(rel.requested_by, "friend_response", payload);
+      pushUnifiedEvent(playerId, "friend_response", payload);
 
       return res.status(204).send();
     }
@@ -127,12 +161,16 @@ app.post("/friend-respond", async (req: Request, res: Response) => {
 
     const payload = {
       requesterId: rel.requested_by,
+      requesterName: requester?.name ?? rel.requested_by,
+      requesterAvatarUrl: requester?.avatar_url ?? null,
       responderId: playerId,
+      responderName: responder?.name ?? playerId,
+      responderAvatarUrl: responder?.avatar_url ?? null,
       action,
       updatedAt: now,
     };
-    pushRequestEvent(rel.requested_by, "friend_response", payload);
-    pushRequestEvent(playerId, "friend_response", payload);
+    pushUnifiedEvent(rel.requested_by, "friend_response", payload);
+    pushUnifiedEvent(playerId, "friend_response", payload);
 
     return res.status(204).send();
   });

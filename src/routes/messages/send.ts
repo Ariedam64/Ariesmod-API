@@ -10,14 +10,15 @@ import {
   normalizeId,
   normalizeText,
 } from "./common";
-import { pushEvent } from "./streamHub";
+import { pushUnifiedEvent } from "../events/hub";
+import { requireApiKey } from "../../middleware/auth"; // 🔒 Mode strict
 
 export function registerMessagesSendRoute(app: Application): void {
-  app.post("/messages/send", async (req: Request, res: Response) => {
+  app.post("/messages/send", requireApiKey, async (req: Request, res: Response) => {
     const ip = getIp(req);
     const body: any = req.body ?? {};
 
-    const fromPlayerId = normalizeId(body.fromPlayerId);
+    const fromPlayerId = req.authenticatedPlayerId!;
     const toPlayerId = normalizeId(body.toPlayerId);
     const roomId = normalizeId(body.roomId);
     const text = normalizeText(body.text);
@@ -123,8 +124,8 @@ export function registerMessagesSendRoute(app: Application): void {
         readAt: null,
       };
 
-      pushEvent(toPlayerId, "message", payload);
-      pushEvent(fromPlayerId, "message", payload);
+      pushUnifiedEvent(toPlayerId, "message", payload);
+      pushUnifiedEvent(fromPlayerId, "message", payload);
 
       return res.status(201).json(payload);
     } catch (err) {

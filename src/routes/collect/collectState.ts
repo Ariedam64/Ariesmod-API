@@ -2,16 +2,16 @@ import type { Application, Request, Response } from "express";
 import { query } from "../../db";
 import { getIp } from "../../lib/ip";
 import { checkRateLimit } from "../../lib/rateLimit";
+import { recordPlayerOnline } from "../events/presence";
+import { requireApiKey } from "../../middleware/auth";
 
 export function registerCollectStateRoute(app: Application): void {
-  app.post("/collect-state", async (req: Request, res: Response) => {
+  app.post("/collect-state", requireApiKey, async (req: Request, res: Response) => {
     const ip = getIp(req);
 
     const body: any = req.body ?? {};
     const {
-      playerId: playerIdRaw,
       playerName,
-      avatarUrl,
       avatar,
       coins,
       room,
@@ -20,12 +20,8 @@ export function registerCollectStateRoute(app: Application): void {
       modVersion,
     } = body;
 
-    // Normalisation + validations
-    const pid = typeof playerIdRaw === "string" ? playerIdRaw.trim() : "";
-
-    if (pid.length < 3) {
-      return res.status(400).send("Invalid playerId");
-    }
+    // Extract playerId from authenticated token
+    const pid = req.authenticatedPlayerId!;
 
     // ⬇⬇⬇ FIX: si "p_" = pas connecté => on ignore complètement
     if (pid.startsWith("p_")) {
@@ -44,6 +40,9 @@ export function registerCollectStateRoute(app: Application): void {
     }
 
     const now = new Date().toISOString();
+    const coinsValue = typeof coins === "number" ? coins : 0;
+    const presenceRoomId =
+      room && typeof room.id === "string" ? room.id : null;
     const normalizedPrivacy =
       privacy && typeof privacy === "object" ? privacy : null;
     const modVersionValue =
@@ -73,12 +72,11 @@ export function registerCollectStateRoute(app: Application): void {
       await query(
         `
         insert into public.players (
-          id, name, avatar_url, avatar, coins, last_event_at, has_mod_installed, mod_version
+          id, name, avatar, coins, last_event_at, has_mod_installed, mod_version
         )
-        values ($1,$2,$3,$4::jsonb,$5,$6,true,$7)
+        values ($1,$2,$3::jsonb,$4,$5,true,$6)
         on conflict (id) do update set
           name = excluded.name,
-          avatar_url = excluded.avatar_url,
           avatar = coalesce(excluded.avatar, public.players.avatar),
           coins = excluded.coins,
           last_event_at = excluded.last_event_at,
@@ -93,9 +91,8 @@ export function registerCollectStateRoute(app: Application): void {
           typeof playerName === "string" && playerName.trim().length > 0
             ? playerName.trim()
             : pid,
-          typeof avatarUrl === "string" ? avatarUrl : null,
           avatarJson,
-          typeof coins === "number" ? coins : 0,
+          coinsValue,
           now,
           modVersionValue,
         ],
@@ -166,6 +163,8 @@ export function registerCollectStateRoute(app: Application): void {
       }
     }
 
+    let eggsHatched: number | null = null;
+
     // 2) player_state (tout en JSON) – on ne touche à rien si state est null / pas un objet
     if (state && typeof state === "object") {
       const st: any = state;
@@ -183,6 +182,13 @@ export function registerCollectStateRoute(app: Application): void {
           : null;
       const statsJson =
         stats !== null && stats !== undefined ? JSON.stringify(stats) : null;
+
+      if (stats && typeof stats === "object") {
+        const rawEggs = (stats as any)?.player?.numEggsHatched;
+        if (typeof rawEggs === "number" && Number.isFinite(rawEggs)) {
+          eggsHatched = Math.max(0, Math.floor(rawEggs));
+        }
+      }
       const activityLogJson =
         activityLog !== null && activityLog !== undefined
           ? JSON.stringify(activityLog)
@@ -221,6 +227,7 @@ export function registerCollectStateRoute(app: Application): void {
         console.error("player_state upsert error:", err);
         return res.status(500).send("DB error (player_state)");
       }
+
     }
 
     // 3) rooms / room_players
@@ -412,6 +419,34 @@ export function registerCollectStateRoute(app: Application): void {
         console.error("room_players upsert error:", err);
         return res.status(500).send("DB error (room_players)");
       }
+    }
+
+    try {
+      await recordPlayerOnline(pid, now, presenceRoomId);
+    } catch (err) {
+      console.error("presence update error:", err);
+    }
+
+    try {
+      await query(
+        `
+        insert into public.leaderboard_stats (
+          player_id, coins, eggs_hatched, updated_at
+        )
+        values ($1,$2,coalesce($3,0),$4)
+        on conflict (player_id) do update set
+          coins = excluded.coins,
+          eggs_hatched = case
+            when $3::bigint is null
+              then public.leaderboard_stats.eggs_hatched
+            else excluded.eggs_hatched
+          end,
+          updated_at = excluded.updated_at
+        `,
+        [pid, coinsValue, eggsHatched, now],
+      );
+    } catch (err) {
+      console.error("leaderboard upsert error:", err);
     }
 
     return res.status(204).send();

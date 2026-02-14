@@ -17,7 +17,7 @@ function jtr(o,d,mx){
 function fmtC(v,c,tn){
   if(v===null||v===undefined)return'<span class="nl">null</span>';
   var lk=(TBL_L[tn]||{})[c];
-  if(lk==='p')return pl(v);if(lk==='r')return rl(v);
+  if(lk==='p')return pl(v);if(lk==='r')return rl(v);if(lk==='g')return gl(v);
   if(typeof v==='boolean')return'<span class="'+(v?'by':'bn')+'">'+v+'</span>';
   if(typeof v==='object'){var s=JSON.stringify(v),p=s.length>100?s.slice(0,100)+'...':s;return'<div class="jp">'+h(p)+'</div><button class="jb" data-j=\\''+h(s).replace(/'/g,'&#39;')+'\\' data-c="'+h(c)+'">Expand</button>'}
   if(typeof v==='string'&&/^\\d{4}-\\d{2}-\\d{2}T/.test(v))return'<span title="'+h(v)+'">'+fd(v)+'</span>';

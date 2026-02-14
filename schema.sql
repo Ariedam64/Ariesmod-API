@@ -10,7 +10,8 @@ create table if not exists public.players (
   last_event_at timestamptz null,
   created_at timestamptz not null default now(),
   has_mod_installed boolean not null default false,
-  mod_version text null
+  mod_version text null,
+  api_key text unique null
 );
 
 create index if not exists players_name_idx
@@ -183,6 +184,116 @@ create index if not exists direct_messages_created_idx
 
 create index if not exists direct_messages_created_sender_idx
   on public.direct_messages using btree (created_at desc, sender_id);
+
+-- 7ter) TABLE groups / group_members / group_messages
+create table if not exists public.groups (
+  id bigserial primary key,
+  name text not null,
+  owner_id text not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint groups_owner_id_fkey
+    foreign key (owner_id) references public.players (id) on delete cascade
+);
+
+create index if not exists groups_owner_idx
+  on public.groups using btree (owner_id);
+
+create index if not exists groups_created_idx
+  on public.groups using btree (created_at desc);
+
+create index if not exists groups_updated_idx
+  on public.groups using btree (updated_at desc);
+
+create table if not exists public.group_members (
+  group_id bigint not null,
+  player_id text not null,
+  role text not null default 'member',
+  joined_at timestamptz not null default now(),
+  constraint group_members_pkey primary key (group_id, player_id),
+  constraint group_members_group_id_fkey
+    foreign key (group_id) references public.groups (id) on delete cascade,
+  constraint group_members_player_id_fkey
+    foreign key (player_id) references public.players (id) on delete cascade,
+  constraint group_members_role_check check (
+    role = any (array['owner'::text, 'member'::text])
+  )
+);
+
+create index if not exists group_members_player_idx
+  on public.group_members using btree (player_id);
+
+create index if not exists group_members_group_idx
+  on public.group_members using btree (group_id);
+
+create table if not exists public.group_messages (
+  id bigserial primary key,
+  group_id bigint not null,
+  sender_id text not null,
+  body text not null,
+  created_at timestamptz not null default now(),
+  constraint group_messages_group_id_fkey
+    foreign key (group_id) references public.groups (id) on delete cascade,
+  constraint group_messages_sender_id_fkey
+    foreign key (sender_id) references public.players (id) on delete cascade
+);
+
+create index if not exists group_messages_group_idx
+  on public.group_messages using btree (group_id, id);
+
+create index if not exists group_messages_created_idx
+  on public.group_messages using btree (created_at desc);
+
+create table if not exists public.group_activity (
+  id bigserial primary key,
+  group_id bigint,
+  group_name text not null,
+  type text not null,
+  actor_id text,
+  member_id text,
+  meta jsonb,
+  created_at timestamptz not null default now(),
+  constraint group_activity_group_id_fkey
+    foreign key (group_id) references public.groups (id) on delete set null,
+  constraint group_activity_actor_id_fkey
+    foreign key (actor_id) references public.players (id) on delete set null,
+  constraint group_activity_member_id_fkey
+    foreign key (member_id) references public.players (id) on delete set null,
+  constraint group_activity_type_check check (
+    type = any (array[
+      'group_created'::text,
+      'group_deleted'::text,
+      'group_member_added'::text,
+      'group_member_removed'::text,
+      'group_renamed'::text
+    ])
+  )
+);
+
+create index if not exists group_activity_created_idx
+  on public.group_activity using btree (created_at desc);
+
+create index if not exists group_activity_group_idx
+  on public.group_activity using btree (group_id, created_at desc);
+
+-- 7quater) TABLE leaderboard_stats
+create table if not exists public.leaderboard_stats (
+  player_id text primary key,
+  coins bigint not null default 0,
+  eggs_hatched bigint not null default 0,
+  updated_at timestamptz not null default now(),
+  constraint leaderboard_stats_player_id_fkey
+    foreign key (player_id) references public.players (id) on delete cascade
+);
+
+create index if not exists leaderboard_stats_coins_idx
+  on public.leaderboard_stats using btree (coins desc);
+
+create index if not exists leaderboard_stats_eggs_idx
+  on public.leaderboard_stats using btree (eggs_hatched desc);
+
+create index if not exists leaderboard_stats_updated_idx
+  on public.leaderboard_stats using btree (updated_at desc);
 
 
 -- 8) TABLE rate_limit_usage

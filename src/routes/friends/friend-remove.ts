@@ -2,17 +2,19 @@ import type { Application, Request, Response } from "express";
 import { query } from "../../db";
 import { getIp } from "../../lib/ip";
 import { checkRateLimit } from "../../lib/rateLimit";
-import { pushRequestEvent } from "./requests-stream-hub";
+import { pushUnifiedEvent } from "../events/hub";
+import { requireApiKey } from "../../middleware/auth";
 
 export function registerFriendRemoveRoute(app: Application): void {
 
-app.post("/friend-remove", async (req: Request, res: Response) => {
+app.post("/friend-remove", requireApiKey, async (req: Request, res: Response) => {
     const ip = getIp(req);
     const body: any = req.body ?? {};
-    const { playerId, otherPlayerId } = body;
+    const playerId = req.authenticatedPlayerId!;
+    const { otherPlayerId } = body;
 
     if (
-      typeof playerId !== "string" ||
+      !playerId ||
       typeof otherPlayerId !== "string" ||
       playerId.length < 3 ||
       otherPlayerId.length < 3
@@ -80,14 +82,46 @@ app.post("/friend-remove", async (req: Request, res: Response) => {
       return res.status(500).send("DB error (relationship delete)");
     }
 
+    // Récupérer les infos des deux joueurs
+    let playerInfo: Array<{
+      id: string;
+      name: string | null;
+      avatar_url: string | null;
+    }> = [];
+
+    try {
+      const { rows } = await query<{
+        id: string;
+        name: string | null;
+        avatar_url: string | null;
+      }>(
+        `
+        select id, name, avatar_url
+        from public.players
+        where id = any($1::text[])
+        `,
+        [[playerId, otherPlayerId]],
+      );
+      playerInfo = rows ?? [];
+    } catch (err) {
+      console.error("friend-remove player info error:", err);
+    }
+
+    const remover = playerInfo.find((p) => p.id === playerId);
+    const removed = playerInfo.find((p) => p.id === otherPlayerId);
+
     const now = new Date().toISOString();
     const payload = {
       removerId: playerId,
+      removerName: remover?.name ?? playerId,
+      removerAvatarUrl: remover?.avatar_url ?? null,
       removedId: otherPlayerId,
+      removedName: removed?.name ?? otherPlayerId,
+      removedAvatarUrl: removed?.avatar_url ?? null,
       removedAt: now,
     };
-    pushRequestEvent(playerId, "friend_removed", payload);
-    pushRequestEvent(otherPlayerId, "friend_removed", payload);
+    pushUnifiedEvent(playerId, "friend_removed", payload);
+    pushUnifiedEvent(otherPlayerId, "friend_removed", payload);
 
     return res.status(204).send();
   });

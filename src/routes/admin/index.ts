@@ -4,6 +4,8 @@ import { registerAdminTableRoutes } from "./table";
 import { registerAdminSqlAndToolsRoutes } from "./sql";
 import { registerAdminOverviewRoutes } from "./overview";
 import { registerAdminDetailRoutes } from "./detail";
+import { registerAdminRoomsRoutes } from "./rooms";
+import { registerAdminGroupsRoutes } from "./groups";
 
 export function registerAdminRoutes(app: Application): void {
   registerAdminPageRoutes(app);
@@ -11,4 +13,6 @@ export function registerAdminRoutes(app: Application): void {
   registerAdminTableRoutes(app);
   registerAdminSqlAndToolsRoutes(app);
   registerAdminDetailRoutes(app);
+  registerAdminRoomsRoutes(app);
+  registerAdminGroupsRoutes(app);
 }

@@ -3,7 +3,7 @@ export function getTablesScript(): string {
 var _ts={t:'players',l:100,o:0,ob:'',od:'asc'};
 function rTbl(pre){
   if(pre)_ts.t=pre;_ts.o=0;_ts.ob='';_ts.od='asc';
-  var tbls=['players','rooms','room_players','player_state','player_privacy','player_relationships','direct_messages','blocked_ips','rate_limit_usage','message_rate_limit_usage','stats_requests_per_player','stats_requests_per_day','stats_requests_per_month'];
+  var tbls=['players','rooms','room_players','groups','group_members','group_messages','group_activity','player_state','player_privacy','player_relationships','direct_messages','blocked_ips','rate_limit_usage','message_rate_limit_usage','stats_requests_per_player','stats_requests_per_day','stats_requests_per_month'];
   var opts='';for(var i=0;i<tbls.length;i++)opts+='<option value="'+tbls[i]+'"'+(tbls[i]===_ts.t?' selected':'')+'>'+tbls[i]+'</option>';
   V.innerHTML='<div class="phd"><h2>Tables</h2><p>Browse database tables</p></div>'+
     '<div class="ctrls">'+

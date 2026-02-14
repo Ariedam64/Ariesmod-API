@@ -6,22 +6,17 @@ async function rDash(){
   if(!_di)_di=setInterval(async function(){if(_s!=='dashboard')return;try{var d=await gj('/admin/overview',{_na:true});cs('dash',d);bDash(d)}catch(e){}},15e3);
 }
 function bDash(d){
-  var p=d.players||{},r=d.rooms||{},s=d.social||{},m=d.messages||{},sec=d.security||{},ch=d.charts||{};
+  var p=d.players||{},r=d.rooms||{},gr=d.groups||{},s=d.social||{},m=d.messages||{},sec=d.security||{},ch=d.charts||{};
   TR.innerHTML='<span class="ldot"></span><span style="font-size:11px;color:var(--t2)">'+fn(p.online_5m)+' online</span><span class="bd g">Live</span>';
   TL.innerHTML='<span style="font-size:12px;color:var(--t3)">Last refresh: '+fd(d.ts)+'</span>';
   var x='<div class="phd"><h2>Dashboard</h2><p>Live overview of your game ecosystem</p></div>';
-
-  // Insights row
-  x+='<div class="ins">';
-  if(s.acceptance_rate)x+='<div class="in"><div class="dot" style="background:'+(s.acceptance_rate>=50?'var(--g)':'var(--y)')+'"></div>Friend acceptance: <b>'+s.acceptance_rate+'%</b></div>';
-  if(m.read_rate)x+='<div class="in"><div class="dot" style="background:'+(m.read_rate>=60?'var(--g)':'var(--y)')+'"></div>Message read rate: <b>'+m.read_rate+'%</b></div>';
-  x+='</div>';
 
   // KPI cards
   x+='<div class="srow">';
   x+=mkS('Players',fn(p.total),[{v:fn(p.online_5m),l:'online'},{v:fn(p.active_24h),l:'24h active'},{v:fn(p.with_mod),l:'with mod'}]);
   x+=mkS('New Players',fn(p.new_24h),[{v:fn(p.new_7d),l:'this week'},{v:fn(p.active_7d),l:'active 7d'}]);
   x+=mkS('Rooms',fn(r.total),[{v:fn(r.public),l:'public'},{v:fn(r.private),l:'private'}]);
+  x+=mkS('Groups',fn(gr.total),[{v:fn(gr.new_24h),l:'new 24h'},{v:fn(gr.updated_24h),l:'updated 24h'}]);
   x+=mkS('Messages',fn(m.total),[{v:fn(m.today),l:'today'},{v:fn(m.conversations),l:'threads'}]);
   x+=mkS('Friendships',fn(s.accepted),[{v:fn(s.pending),l:'pending'},{v:fn(s.new_24h),l:'new today'}]);
   x+='</div>';
@@ -106,7 +101,7 @@ function bDash(d){
   x+='</div>';
 
   // Recent sections
-  x+='<div class="g4" style="margin-bottom:10px">';
+  x+='<div class="g3" style="margin-bottom:10px">';
   var rp=d.recent_players||[];
   var rph='';for(var i=0;i<Math.min(rp.length,10);i++){var p2=rp[i];rph+='<div class="fi"><span class="fi-ts">'+fa(p2.created_at)+'</span>'+pl(p2.id,p2.name)+(p2.has_mod_installed?'<span class="bd b" style="margin-left:auto">mod</span>':'')+'</div>'}
   x+=mkP('Recent New Players',rph||'<div class="em">No recent players</div>');
@@ -124,7 +119,10 @@ function bDash(d){
     rrqh+='<div class="fi"><span class="fi-ts">'+fa(q.created_at)+'</span>'+pl(q.user_one_id,q.user_one_name)+' <span style="color:var(--t3)">&rarr;</span> '+pl(q.user_two_id,q.user_two_name)+' <span class="rs '+q.status+'">'+q.status+'</span></div>';
   }
   x+=mkP('Recent Friend Requests',rrqh||'<div class="em">No recent requests</div>');
+  x+='</div>';
 
+  // Group activity + rooms + group messages
+  x+='<div class="g3" style="margin-bottom:10px">';
   var rrn=d.recent_rooms||[];
   var rrnh='';for(var i=0;i<Math.min(rrn.length,10);i++){
     var rm2=rrn[i];
@@ -132,6 +130,43 @@ function bDash(d){
     rrnh+='<div class="fi"><span class="fi-ts">'+fa(rm2.created_at)+'</span>'+rl(rm2.id)+cr+'<span style="margin-left:auto;display:flex;gap:6px;align-items:center"><span class="bd">'+fn(rm2.players_count)+'/6</span><span class="bd'+(rm2.is_private?' y':' g')+'">'+(rm2.is_private?'Private':'Public')+'</span></span></div>';
   }
   x+=mkP('Recent New Rooms',rrnh||'<div class="em">No recent rooms</div>');
+
+  var ga=d.recent_group_activity||[];
+  var gah='';
+  function gaDesc(a){
+    var actor=a.actor_id?pl(a.actor_id,a.actor_name||a.actor_id):'<span class="nl">-</span>';
+    var member=a.member_id?pl(a.member_id,a.member_name||a.member_id):'';
+    if(a.type==='group_created')return 'Created by '+actor;
+    if(a.type==='group_deleted')return 'Deleted by '+actor;
+    if(a.type==='group_member_added')return 'Added '+member+' by '+actor;
+    if(a.type==='group_member_removed')return 'Removed '+member+' by '+actor;
+    if(a.type==='group_renamed'){
+      var oldName=a.meta&&a.meta.oldName?String(a.meta.oldName):'';
+      var rename=oldName?(' <span style="color:var(--t3)">('+h(oldName)+' &rarr; '+h(a.group_name||'')+')</span>'):'';
+      return 'Renamed by '+actor+rename;
+    }
+    return a.type||'Event';
+  }
+  for(var i=0;i<Math.min(ga.length,12);i++){
+    var a=ga[i];
+    var grp=a.group_id!=null?gl(a.group_id,a.group_name||('Group '+a.group_id)):'<span class="nl">-</span>';
+    gah+='<div class="fi"><span class="fi-ts">'+fa(a.created_at)+'</span>'+grp+' <span style="color:var(--t3)">&middot;</span> '+gaDesc(a)+'</div>';
+  }
+  x+=mkP('Recent Group Activity',gah||'<div class="em">No recent activity</div>');
+
+  var gm=d.recent_group_messages||[];
+  var gmh='';
+  for(var j=0;j<Math.min(gm.length,10);j++){
+    var m2=gm[j];
+    var grp2=m2.group_id!=null?gl(m2.group_id,m2.group_name||('Group '+m2.group_id)):'<span class="nl">-</span>';
+    var snd=m2.sender_id?pl(m2.sender_id,m2.sender_name||m2.sender_id):'<span class="nl">-</span>';
+    var body=m2.body?String(m2.body).trim():'';
+    if(body.length>90)body=body.slice(0,87)+'...';
+    gmh+='<div class="mg"><div class="mg-t"><span class="fi-ts" style="width:auto">'+fa(m2.created_at)+'</span>'+snd+' <span style="color:var(--t3)">&rarr;</span> '+grp2+'<span style="margin-left:auto" class="bd">'+fn(m2.member_count)+' members</span></div>';
+    if(body)gmh+='<div class="mg-b">'+h(body)+'</div>';
+    gmh+='</div>';
+  }
+  x+=mkP('Recent New Group Messages',gmh||'<div class="em">No recent group messages</div>');
   x+='</div>';
 
   V.innerHTML=x;

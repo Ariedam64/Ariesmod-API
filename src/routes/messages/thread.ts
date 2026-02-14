@@ -8,11 +8,12 @@ import {
   isPlayerConnected,
   normalizeId,
 } from "./common";
+import { requireApiKey } from "../../middleware/auth";
 
 export function registerMessagesThreadRoute(app: Application): void {
-  app.get("/messages/thread", async (req: Request, res: Response) => {
+  app.get("/messages/thread", requireApiKey, async (req: Request, res: Response) => {
     const ip = getIp(req);
-    const playerId = normalizeId(req.query.playerId);
+    const playerId = req.authenticatedPlayerId!;
     const otherPlayerId = normalizeId(req.query.otherPlayerId);
 
     let limit = Number(req.query.limit ?? 50);

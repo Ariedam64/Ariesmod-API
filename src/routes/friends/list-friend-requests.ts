@@ -2,18 +2,16 @@ import type { Application, Request, Response } from "express";
 import { query } from "../../db";
 import { getIp } from "../../lib/ip";
 import { checkRateLimit } from "../../lib/rateLimit";
+import { requireApiKey } from "../../middleware/auth";
 
 export function registerListFriendRequestsRoute(app: Application): void {
-  
+
   app.get(
     "/list-friend-requests",
+    requireApiKey,
     async (req: Request, res: Response) => {
       const ip = getIp(req);
-      const playerId = String(req.query.playerId ?? "").trim();
-
-      if (!playerId || playerId.length < 3) {
-        return res.status(400).send("Invalid playerId");
-      }
+      const playerId = req.authenticatedPlayerId!;
 
       try {
         const allowed = await checkRateLimit(ip, playerId, 400, 240);

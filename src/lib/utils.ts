@@ -5,7 +5,8 @@ type SectionKey =
   | "stats"
   | "activityLog"
   | "journal"
-  | "room";
+  | "room"
+  | "leaderboard";
 
 export function parseSections(raw: unknown): Set<SectionKey> | null {
   if (!raw) return null;
@@ -52,6 +53,7 @@ export function parseSections(raw: unknown): Set<SectionKey> | null {
       set.add("activityLog");
     else if (s === "journal") set.add("journal");
     else if (s === "room") set.add("room");
+    else if (s === "leaderboard") set.add("leaderboard");
   }
 
   return set.size ? set : null;

@@ -20,6 +20,11 @@ export function getLayout(): string {
         <div class="side-lbl">Explore</div>
         <div class="sl" data-r="/search"><span class="ic">&#8981;</span>Search</div>
       </div>
+      <div class="side-section">
+        <div class="side-lbl">Social</div>
+        <div class="sl" data-r="/rooms"><span class="ic">&#8962;</span>Rooms</div>
+        <div class="sl" data-r="/groups"><span class="ic">&#9776;</span>Groups</div>
+      </div>
     </nav>
     <div class="side-ctx" id="side-ctx" style="display:none">
       <div class="side-lbl">Context</div>
