@@ -12,6 +12,7 @@ import { registerGroupsRoutes } from "./routes/groups";
 import { registerLeaderboardRoutes } from "./routes/leaderboard";
 import { registerEventsRoutes } from "./routes/events";
 import { registerDiscordAuthRoutes } from "./routes/auth";
+import { registerPrivacyRoutes } from "./routes/privacy";
 
 dotenv.config();
 
@@ -80,4 +81,5 @@ registerMessagesRoutes(app);
 registerGroupsRoutes(app);
 registerLeaderboardRoutes(app);
 registerEventsRoutes(app);
+registerPrivacyRoutes(app);
 registerAdminRoutes(app);

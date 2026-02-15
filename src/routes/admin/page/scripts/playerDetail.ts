@@ -176,7 +176,7 @@ function bPl(d,id){
   x+='</div>';
 
   x+='<div class="tp" data-t="privacy" style="display:none">';
-  if(pr){var flags=[['Show Profile',pr.show_profile],['Show Garden',pr.show_garden],['Show Inventory',pr.show_inventory],['Show Coins',pr.show_coins],['Show Activity Log',pr.show_activity_log],['Show Journal',pr.show_journal],['Show Stats',pr.show_stats],['Hide Room',pr.hide_room_from_public_list]];
+  if(pr){var flags=[['Show Garden',pr.show_garden],['Show Inventory',pr.show_inventory],['Show Coins',pr.show_coins],['Show Activity Log',pr.show_activity_log],['Show Journal',pr.show_journal],['Show Stats',pr.show_stats],['Hide Room',pr.hide_room_from_public_list]];
     x+='<div class="pg">';for(var i=0;i<flags.length;i++){var on=flags[i][1]===true;x+='<div class="pf"><div class="pd '+(on?'on':'off')+'"></div><span>'+h(flags[i][0])+'</span><span style="margin-left:auto;color:var(--t3);font-size:11px">'+(flags[i][1]===null?'null':on?'true':'false')+'</span></div>'}
     x+='</div>';if(pr.updated_at)x+='<div style="font-size:11px;color:var(--t3);margin-top:8px">Updated: '+fd(pr.updated_at)+'</div>';
   }else x+='<div class="em">No privacy settings</div>';

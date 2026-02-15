@@ -5,7 +5,9 @@ import { checkRateLimit } from "../../lib/rateLimit";
 import { normalizeId, normalizeText } from "../messages/common";
 import {
   GROUP_NAME_MAX,
+  canManageMembers,
   getGroupAccess,
+  getPlayerInfo,
   parseGroupId,
   pushGroupEvent,
   recordGroupActivity,
@@ -54,8 +56,8 @@ export function registerGroupRenameRoute(app: Application): void {
       return res.status(404).send("Group not found");
     }
 
-    if (access.ownerId !== playerId) {
-      return res.status(403).send("Only owner can rename the group");
+    if (!canManageMembers(access.role)) {
+      return res.status(403).send("Only owner or admin can rename the group");
     }
 
     const now = new Date().toISOString();
@@ -80,9 +82,11 @@ export function registerGroupRenameRoute(app: Application): void {
         meta: { oldName: access.name },
       });
 
+      const actorInfo = await getPlayerInfo(playerId);
       await pushGroupEvent(groupId, "group_updated", {
         groupId,
         name,
+        actor: actorInfo,
         updatedAt: now,
       });
 

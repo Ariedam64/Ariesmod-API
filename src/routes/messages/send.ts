@@ -6,7 +6,6 @@ import {
   MESSAGE_MAX_LENGTH,
   areFriends,
   buildConversationId,
-  isPlayerConnectedInRoom,
   normalizeId,
   normalizeText,
 } from "./common";
@@ -20,7 +19,6 @@ export function registerMessagesSendRoute(app: Application): void {
 
     const fromPlayerId = req.authenticatedPlayerId!;
     const toPlayerId = normalizeId(body.toPlayerId);
-    const roomId = normalizeId(body.roomId);
     const text = normalizeText(body.text);
 
     if (
@@ -34,10 +32,6 @@ export function registerMessagesSendRoute(app: Application): void {
 
     if (fromPlayerId === toPlayerId) {
       return res.status(400).send("Cannot message yourself");
-    }
-
-    if (!roomId) {
-      return res.status(400).send("Invalid roomId");
     }
 
     if (!text || text.length === 0 || text.length > MESSAGE_MAX_LENGTH) {
@@ -66,16 +60,6 @@ export function registerMessagesSendRoute(app: Application): void {
       return res.status(500).send("DB error (friend check)");
     }
 
-    try {
-      const connected = await isPlayerConnectedInRoom(fromPlayerId, roomId);
-      if (!connected) {
-        return res.status(403).send("Sender not connected in room");
-      }
-    } catch (err) {
-      console.error("messages send connected check error:", err);
-      return res.status(500).send("DB error (connected check)");
-    }
-
     const conversationId = buildConversationId(fromPlayerId, toPlayerId);
     const now = new Date().toISOString();
 
@@ -90,19 +74,17 @@ export function registerMessagesSendRoute(app: Application): void {
           conversation_id,
           sender_id,
           recipient_id,
-          room_id,
           body,
           created_at,
           delivered_at
         )
-        values ($1,$2,$3,$4,$5,$6,$6)
+        values ($1,$2,$3,$4,$5,$5)
         returning id, created_at, delivered_at
         `,
         [
           conversationId,
           fromPlayerId,
           toPlayerId,
-          roomId,
           text,
           now,
         ],

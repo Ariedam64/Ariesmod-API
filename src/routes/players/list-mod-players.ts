@@ -29,15 +29,14 @@ export function registerListModPlayersRoute(app: Application): void {
     const params: any[] = [];
     let idx = 1;
     let where = `
-      where p.has_mod_installed = true
-        and (pp.show_profile is distinct from false)
+      where has_mod_installed = true
     `;
 
     if (rawQuery.length > 0) {
       const likeQuery = `%${rawQuery}%`;
       params.push(likeQuery);
       params.push(likeQuery);
-      where += ` and (p.name ilike $${idx++} or p.id ilike $${idx++})`;
+      where += ` and (name ilike $${idx++} or id ilike $${idx++})`;
     }
 
     params.push(limit);
@@ -47,16 +46,14 @@ export function registerListModPlayersRoute(app: Application): void {
       const { rows } = await query(
         `
         select
-          p.id,
-          p.name,
-          p.avatar_url,
-          p.avatar,
-          p.last_event_at
-        from public.players p
-        left join public.player_privacy pp
-          on pp.player_id = p.id
+          id,
+          name,
+          avatar_url,
+          avatar,
+          last_event_at
+        from public.players
         ${where}
-        order by p.last_event_at desc nulls last, p.id asc
+        order by last_event_at desc nulls last, id asc
         limit $${idx++} offset $${idx++}
         `,
         params,

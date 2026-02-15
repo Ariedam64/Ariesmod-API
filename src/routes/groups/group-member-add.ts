@@ -5,8 +5,10 @@ import { checkRateLimit } from "../../lib/rateLimit";
 import { areFriends, normalizeId } from "../messages/common";
 import {
   GROUP_MAX_MEMBERS,
+  canManageMembers,
   getGroupAccess,
   getGroupMemberCount,
+  getPlayerInfo,
   parseGroupId,
   pushGroupEvent,
   recordGroupActivity,
@@ -59,8 +61,8 @@ export function registerGroupMemberAddRoute(app: Application): void {
       return res.status(404).send("Group not found");
     }
 
-    if (access.ownerId !== playerId) {
-      return res.status(403).send("Only owner can invite members");
+    if (!canManageMembers(access.role)) {
+      return res.status(403).send("Only owner or admin can invite members");
     }
 
     try {
@@ -83,14 +85,16 @@ export function registerGroupMemberAddRoute(app: Application): void {
       return res.status(500).send("DB error (member check)");
     }
 
-    try {
-      const friends = await areFriends(playerId, memberId);
-      if (!friends) {
-        return res.status(403).send("Player is not your friend");
+    if (!access.isPublic) {
+      try {
+        const friends = await areFriends(playerId, memberId);
+        if (!friends) {
+          return res.status(403).send("Player is not your friend");
+        }
+      } catch (err) {
+        console.error("group add member friend check error:", err);
+        return res.status(500).send("DB error (friend check)");
       }
-    } catch (err) {
-      console.error("group add member friend check error:", err);
-      return res.status(500).send("DB error (friend check)");
     }
 
     try {
@@ -141,10 +145,11 @@ export function registerGroupMemberAddRoute(app: Application): void {
         createdAt: now,
       });
 
+      const memberInfo = await getPlayerInfo(memberId);
       await pushGroupEvent(groupId, "group_member_added", {
         groupId,
         groupName: access.name,
-        memberId,
+        member: memberInfo,
         addedBy: playerId,
         createdAt: now,
       });

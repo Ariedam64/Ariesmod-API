@@ -84,31 +84,31 @@ export async function optionalApiKey(
 ): Promise<void> {
   try {
     const authHeader = req.headers.authorization;
-    const playerId = req.body?.playerId || req.query?.playerId;
 
-    // Si pas de token, on laisse passer (mode permissif)
-    if (!authHeader || !playerId) {
-      console.warn(`[WARN] Request without API key: ${req.method} ${req.path} from ${playerId || 'unknown'}`);
+    if (!authHeader) {
       next();
       return;
     }
 
     const token = authHeader.replace(/^Bearer\s+/i, "").trim();
 
-    // Vérifier le token
-    const result = await query(
-      "SELECT id FROM players WHERE id = $1 AND api_key = $2",
-      [playerId, token]
-    );
-
-    if (result.rows.length === 0) {
-      console.warn(`[WARN] Invalid API key for player ${playerId}`);
+    if (!token) {
+      next();
+      return;
     }
 
-    // On laisse passer quand même (mode permissif)
+    const result = await query(
+      "SELECT id FROM players WHERE api_key = $1",
+      [token]
+    );
+
+    if (result.rows.length > 0) {
+      req.authenticatedPlayerId = result.rows[0].id;
+    }
+
     next();
   } catch (error) {
     console.error("Optional auth middleware error:", error);
-    next(); // On laisse passer même en cas d'erreur
+    next();
   }
 }

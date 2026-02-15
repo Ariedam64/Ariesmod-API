@@ -190,6 +190,7 @@ create table if not exists public.groups (
   id bigserial primary key,
   name text not null,
   owner_id text not null,
+  is_public boolean not null default false,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint groups_owner_id_fkey
@@ -205,6 +206,10 @@ create index if not exists groups_created_idx
 create index if not exists groups_updated_idx
   on public.groups using btree (updated_at desc);
 
+create index if not exists groups_is_public_idx
+  on public.groups using btree (is_public)
+  where is_public = true;
+
 create table if not exists public.group_members (
   group_id bigint not null,
   player_id text not null,
@@ -216,7 +221,7 @@ create table if not exists public.group_members (
   constraint group_members_player_id_fkey
     foreign key (player_id) references public.players (id) on delete cascade,
   constraint group_members_role_check check (
-    role = any (array['owner'::text, 'member'::text])
+    role = any (array['owner'::text, 'admin'::text, 'member'::text])
   )
 );
 
@@ -265,7 +270,9 @@ create table if not exists public.group_activity (
       'group_deleted'::text,
       'group_member_added'::text,
       'group_member_removed'::text,
-      'group_renamed'::text
+      'group_renamed'::text,
+      'group_member_joined'::text,
+      'group_role_changed'::text
     ])
   )
 );

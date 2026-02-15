@@ -3,10 +3,11 @@ import { query } from "../../db";
 import { getIp } from "../../lib/ip";
 import { checkRateLimit } from "../../lib/rateLimit";
 import { recordPlayerOnline } from "../events/presence";
-import { requireApiKey } from "../../middleware/auth";
+import { optionalApiKey } from "../../middleware/auth";
+import { normalizeId } from "../messages/common";
 
 export function registerCollectStateRoute(app: Application): void {
-  app.post("/collect-state", requireApiKey, async (req: Request, res: Response) => {
+  app.post("/collect-state", optionalApiKey, async (req: Request, res: Response) => {
     const ip = getIp(req);
 
     const body: any = req.body ?? {};
@@ -16,12 +17,15 @@ export function registerCollectStateRoute(app: Application): void {
       coins,
       room,
       state,
-      privacy,
       modVersion,
     } = body;
 
-    // Extract playerId from authenticated token
-    const pid = req.authenticatedPlayerId!;
+    // Token auth en priorité, sinon fallback sur playerId du body
+    const pid = req.authenticatedPlayerId || normalizeId(body.playerId);
+
+    if (!pid || pid.length < 3) {
+      return res.status(400).send("Invalid playerId");
+    }
 
     // ⬇⬇⬇ FIX: si "p_" = pas connecté => on ignore complètement
     if (pid.startsWith("p_")) {
@@ -43,8 +47,6 @@ export function registerCollectStateRoute(app: Application): void {
     const coinsValue = typeof coins === "number" ? coins : 0;
     const presenceRoomId =
       room && typeof room.id === "string" ? room.id : null;
-    const normalizedPrivacy =
-      privacy && typeof privacy === "object" ? privacy : null;
     const modVersionValue =
       typeof modVersion === "string"
         ? modVersion.trim().slice(0, 64) || null
@@ -100,67 +102,6 @@ export function registerCollectStateRoute(app: Application): void {
     } catch (err) {
       console.error("players upsert error:", err);
       return res.status(500).send("DB error (players)");
-    }
-
-    // 1bis) player_privacy
-    if (normalizedPrivacy) {
-      const {
-        showProfile,
-        showGarden,
-        showInventory,
-        showCoins,
-        showActivityLog,
-        showJournal,
-        showStats,
-        hideRoomFromPublicList,
-      } = normalizedPrivacy as any;
-
-      try {
-        await query(
-          `
-          insert into public.player_privacy (
-            player_id,
-            show_profile,
-            show_garden,
-            show_inventory,
-            show_coins,
-            show_activity_log,
-            show_journal,
-            show_stats,
-            hide_room_from_public_list,
-            updated_at
-          )
-          values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
-          on conflict (player_id) do update set
-            show_profile = excluded.show_profile,
-            show_garden = excluded.show_garden,
-            show_inventory = excluded.show_inventory,
-            show_coins = excluded.show_coins,
-            show_activity_log = excluded.show_activity_log,
-            show_journal = excluded.show_journal,
-            show_stats = excluded.show_stats,
-            hide_room_from_public_list = excluded.hide_room_from_public_list,
-            updated_at = excluded.updated_at
-          `,
-          [
-            pid,
-            typeof showProfile === "boolean" ? showProfile : null,
-            typeof showGarden === "boolean" ? showGarden : null,
-            typeof showInventory === "boolean" ? showInventory : null,
-            typeof showCoins === "boolean" ? showCoins : null,
-            typeof showActivityLog === "boolean" ? showActivityLog : null,
-            typeof showJournal === "boolean" ? showJournal : null,
-            typeof showStats === "boolean" ? showStats : null,
-            typeof hideRoomFromPublicList === "boolean"
-              ? hideRoomFromPublicList
-              : null,
-            now,
-          ],
-        );
-      } catch (err) {
-        console.error("player_privacy upsert error:", err);
-        return res.status(500).send("DB error (player_privacy)");
-      }
     }
 
     let eggsHatched: number | null = null;
@@ -230,14 +171,21 @@ export function registerCollectStateRoute(app: Application): void {
 
     }
 
-    // 3) rooms / room_players
+    // 2) rooms / room_players
     if (room && typeof room.id === "string") {
       const roomId: string = room.id;
 
-      const hideRoom =
-        normalizedPrivacy &&
-        typeof normalizedPrivacy === "object" &&
-        !!(normalizedPrivacy as any).hideRoomFromPublicList;
+      // Lire hide_room_from_public_list depuis la base
+      let hideRoom = false;
+      try {
+        const privResult = await query<{ hide_room_from_public_list: boolean | null }>(
+          `select hide_room_from_public_list from public.player_privacy where player_id = $1`,
+          [pid],
+        );
+        hideRoom = privResult.rows?.[0]?.hide_room_from_public_list === true;
+      } catch (err) {
+        console.error("privacy lookup error:", err);
+      }
 
       const isPrivate = hideRoom || !!room.isPrivate;
 

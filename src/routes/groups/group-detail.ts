@@ -52,6 +52,7 @@ export function registerGroupDetailRoute(app: Application): void {
           id: access.groupId,
           name: access.name,
           ownerId: access.ownerId,
+          isPublic: access.isPublic,
           createdAt: access.createdAt,
           updatedAt: access.updatedAt,
         },

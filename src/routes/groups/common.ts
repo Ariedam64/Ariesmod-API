@@ -1,17 +1,44 @@
 import { query } from "../../db";
 import { pushUnifiedEvent } from "../events/hub";
 
-export const GROUP_MAX_MEMBERS = 12;
+export const GROUP_MAX_MEMBERS = 100;
 export const GROUP_NAME_MAX = 40;
 
 export type GroupAccess = {
   groupId: number;
   name: string;
   ownerId: string;
+  isPublic: boolean;
   createdAt: string;
   updatedAt: string;
   role: string | null;
 };
+
+export type GroupRole = "owner" | "admin" | "member";
+
+const ROLE_RANK: Record<string, number> = {
+  owner: 3,
+  admin: 2,
+  member: 1,
+};
+
+export function outranks(actorRole: string, targetRole: string): boolean {
+  return (ROLE_RANK[actorRole] ?? 0) > (ROLE_RANK[targetRole] ?? 0);
+}
+
+export function canManageMembers(role: string | null): boolean {
+  return role === "owner" || role === "admin";
+}
+
+export function isOwner(role: string | null): boolean {
+  return role === "owner";
+}
+
+export function isValidAssignableRole(
+  role: string,
+): role is "admin" | "member" {
+  return role === "admin" || role === "member";
+}
 
 export function parseGroupId(raw: string | undefined): number | null {
   if (!raw) return null;
@@ -28,6 +55,7 @@ export async function getGroupAccess(
     id: number;
     name: string;
     owner_id: string;
+    is_public: boolean;
     created_at: string;
     updated_at: string;
     role: string | null;
@@ -37,6 +65,7 @@ export async function getGroupAccess(
       g.id,
       g.name,
       g.owner_id,
+      g.is_public,
       g.created_at,
       g.updated_at,
       gm.role
@@ -56,6 +85,7 @@ export async function getGroupAccess(
     groupId: row.id,
     name: row.name,
     ownerId: row.owner_id,
+    isPublic: row.is_public,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     role: row.role ?? null,
@@ -88,6 +118,55 @@ export async function getGroupMemberCount(groupId: number): Promise<number> {
   );
   const count = Number(rows[0]?.count ?? "0");
   return Number.isFinite(count) ? count : 0;
+}
+
+export async function getMemberRole(
+  groupId: number,
+  playerId: string,
+): Promise<string | null> {
+  const { rows } = await query<{ role: string }>(
+    `
+    select role
+    from public.group_members
+    where group_id = $1
+      and player_id = $2
+    limit 1
+    `,
+    [groupId, playerId],
+  );
+  return rows[0]?.role ?? null;
+}
+
+export async function getPlayerInfo(
+  playerId: string,
+): Promise<{
+  playerId: string;
+  name: string;
+  avatar: unknown;
+  avatarUrl: string | null;
+} | null> {
+  const { rows } = await query<{
+    id: string;
+    name: string | null;
+    avatar: unknown;
+    avatar_url: string | null;
+  }>(
+    `
+    select id, name, avatar, avatar_url
+    from public.players
+    where id = $1
+    limit 1
+    `,
+    [playerId],
+  );
+  const row = rows[0];
+  if (!row) return null;
+  return {
+    playerId: row.id,
+    name: row.name ?? row.id,
+    avatar: row.avatar ?? null,
+    avatarUrl: row.avatar_url ?? null,
+  };
 }
 
 export async function getGroupMembersDetailed(
@@ -169,7 +248,9 @@ export async function recordGroupActivity({
     | "group_deleted"
     | "group_member_added"
     | "group_member_removed"
-    | "group_renamed";
+    | "group_renamed"
+    | "group_member_joined"
+    | "group_role_changed";
   actorId?: string | null;
   memberId?: string | null;
   meta?: Record<string, any> | null;

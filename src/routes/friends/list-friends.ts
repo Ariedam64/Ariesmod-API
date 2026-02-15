@@ -30,6 +30,7 @@ export function registerListFriendsRoute(app: Application): void {
         last_event_at: string | null;
         room_id: string | null;
         is_private: boolean | null;
+        hide_room_from_public_list: boolean | null;
       }>(
         `
         select
@@ -39,7 +40,8 @@ export function registerListFriendsRoute(app: Application): void {
           p.avatar,
           p.last_event_at,
           rp.room_id,
-          r2.is_private
+          r2.is_private,
+          pp.hide_room_from_public_list
         from public.player_relationships r
         join public.players p
           on p.id = case
@@ -51,6 +53,8 @@ export function registerListFriendsRoute(app: Application): void {
           and rp.left_at is null
         left join public.rooms r2
           on r2.id = rp.room_id
+        left join public.player_privacy pp
+          on pp.player_id = p.id
         where r.status = 'accepted'
           and (r.user_one_id = $1 or r.user_two_id = $1)
         `,
@@ -61,6 +65,7 @@ export function registerListFriendsRoute(app: Application): void {
       const friends = (rows ?? []).map((row) => {
         const lastEventTs = row.last_event_at ? Date.parse(row.last_event_at) : null;
         const isOnline = lastEventTs !== null && now - lastEventTs <= CONNECTED_TTL_MS;
+        const roomHidden = row.is_private || row.hide_room_from_public_list === true;
 
         return {
           playerId: row.id,
@@ -68,7 +73,7 @@ export function registerListFriendsRoute(app: Application): void {
           avatarUrl: row.avatar_url ?? null,
           avatar: row.avatar ?? null,
           lastEventAt: row.last_event_at ?? null,
-          roomId: row.room_id && !row.is_private ? row.room_id : null,
+          roomId: row.room_id && !roomHidden ? row.room_id : null,
           isOnline,
         };
       });

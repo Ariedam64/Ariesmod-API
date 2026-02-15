@@ -5,6 +5,7 @@ import { checkRateLimit } from "../../lib/rateLimit";
 import { normalizeId } from "../messages/common";
 import {
   getGroupAccess,
+  getPlayerInfo,
   parseGroupId,
   pushGroupEvent,
   recordGroupActivity,
@@ -63,9 +64,11 @@ export function registerGroupDeleteRoute(app: Application): void {
         createdAt: now,
       });
 
+      const actorInfo = await getPlayerInfo(playerId);
       await pushGroupEvent(groupId, "group_deleted", {
         groupId,
         deletedBy: playerId,
+        actor: actorInfo,
         deletedAt: now,
       });
 

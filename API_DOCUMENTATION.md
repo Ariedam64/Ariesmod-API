@@ -16,9 +16,10 @@ Documentation destinée à l'intégration côté client. Tous les endpoints sont
 6. [Groups (Groupes)](#groups)
 7. [Events (Temps réel)](#events)
 8. [Leaderboard (Classements)](#leaderboard)
-9. [Codes d'erreur](#codes-derreur)
-10. [Statut en ligne](#statut-en-ligne)
-11. [Système de confidentialité](#système-de-confidentialité)
+9. [Privacy (Confidentialité)](#privacy)
+10. [Codes d'erreur](#codes-derreur)
+11. [Statut en ligne](#statut-en-ligne)
+12. [Système de confidentialité](#système-de-confidentialité)
 
 ---
 
@@ -114,16 +115,6 @@ Envoie l'état du jeu au serveur. C'est l'endpoint principal appelé périodique
     "activityLog": { },
     "journal": { }
   },
-  "privacy": {
-    "showProfile": true,
-    "showGarden": true,
-    "showInventory": true,
-    "showCoins": true,
-    "showActivityLog": true,
-    "showJournal": true,
-    "showStats": true,
-    "hideRoomFromPublicList": false
-  },
   "modVersion": "1.0.0"
 }
 ```
@@ -134,11 +125,11 @@ Tous les champs sont optionnels (sauf le token d'auth). Le serveur met à jour u
 
 **Comportement serveur :**
 - Met à jour la table `players` (nom, avatar, coins, `last_event_at`, `mod_version`)
-- Met à jour `player_privacy` (upsert)
 - Met à jour `player_state` (garden, inventory, stats, activity_log, journal) en upsert
-- Met à jour `rooms` et `room_players` (gestion des salles)
+- Met à jour `rooms` et `room_players` (gestion des salles, `is_private` est déterminé par `room.isPrivate` ou le setting `hideRoomFromPublicList` lu depuis la base)
 - Met à jour `leaderboard_stats` (coins + eggs_hatched extraits de `stats.player.numEggsHatched`)
 - Les joueurs dont l'ID commence par `p_` dans les `userSlots` sont ignorés
+- **Note :** Les privacy settings ne sont plus gérés ici, utiliser `POST /privacy` à la place
 
 ---
 
@@ -187,7 +178,7 @@ Récupère le profil et l'état d'un joueur unique.
 **Comportement serveur :**
 - Respecte les paramètres de confidentialité du joueur (les sections masquées ne sont pas retournées)
 - Le statut en ligne est calculé sur un seuil de 6 minutes depuis `last_event_at`
-- La room n'est incluse que si elle n'est pas privée
+- La room n'est incluse que si elle n'est pas privée et que le joueur n'a pas activé `hideRoomFromPublicList`
 - Les rangs du leaderboard sont calculés dynamiquement
 
 ---
@@ -249,7 +240,7 @@ Liste les joueurs qui ont le mod installé.
 ```
 
 **Comportement serveur :**
-- Filtre : `has_mod_installed = true` et profil non masqué
+- Filtre : `has_mod_installed = true`
 - Recherche par `ILIKE` sur le nom ou l'ID
 - Trié par `last_event_at` décroissant (les plus récemment actifs en premier)
 
@@ -343,7 +334,7 @@ Récupère la liste des amis acceptés.
 
 **Comportement serveur :**
 - Inclut le statut en ligne (seuil de 6 min)
-- `roomId` est `null` si la room est privée
+- `roomId` est `null` si la room est privée ou si l'ami a activé `hideRoomFromPublicList`
 
 ---
 
@@ -442,16 +433,14 @@ Envoie un message direct.
 ```json
 {
   "toPlayerId": "recipient_id",
-  "roomId": "current_room_id",
   "text": "Contenu du message"
 }
 ```
 
-| Champ      | Type   | Description                                      |
-|------------|--------|--------------------------------------------------|
-| toPlayerId | string | ID du destinataire                                |
-| roomId     | string | ID de la room dans laquelle l'expéditeur se trouve |
-| text       | string | Contenu du message (max 1000 caractères)           |
+| Champ      | Type   | Description                              |
+|------------|--------|------------------------------------------|
+| toPlayerId | string | ID du destinataire                        |
+| text       | string | Contenu du message (max 1000 caractères)  |
 
 **Réponse (201) :**
 
@@ -463,14 +452,13 @@ Envoie un message direct.
   "recipientId": "recipient_id",
   "body": "Contenu du message",
   "createdAt": "2025-01-01T00:00:00Z",
-  "deliveredAt": null,
+  "deliveredAt": "2025-01-01T00:00:00Z",
   "readAt": null
 }
 ```
 
 **Comportement serveur :**
 - Vérifie que les joueurs sont amis
-- Vérifie que l'expéditeur est connecté dans la room indiquée
 - Le `conversationId` est formaté comme `"id_petit:id_grand"` (IDs triés)
 - Émet un événement `message` aux deux joueurs
 - Rate limit : 30 messages/min par joueur
@@ -478,7 +466,6 @@ Envoie un message direct.
 **Erreurs possibles :**
 - `400` : Texte vide ou trop long
 - `403` : Les joueurs ne sont pas amis
-- `404` : Joueur non trouvé ou non connecté
 
 ---
 
@@ -561,7 +548,14 @@ Récupère les nouveaux messages depuis un timestamp donné (polling simple).
 
 ## Groups
 
-Système de groupes de discussion.
+Système de groupes de discussion avec hiérarchie de rôles et support public/privé.
+
+**Rôles :** `owner` > `admin` > `member`
+- **Owner** : Tous les droits (renommer, supprimer, ajouter/retirer des membres, changer les rôles)
+- **Admin** : Peut renommer le groupe, ajouter/retirer des membres (sauf owner et autres admins), changer les rôles des membres inférieurs
+- **Member** : Peut envoyer des messages et quitter le groupe
+
+**Maximum :** 100 membres par groupe
 
 ### `POST /groups`
 
@@ -573,13 +567,15 @@ Crée un nouveau groupe.
 
 ```json
 {
-  "name": "Mon groupe"
+  "name": "Mon groupe",
+  "isPublic": false
 }
 ```
 
-| Champ | Type   | Description                        |
-|-------|--------|------------------------------------|
-| name  | string | Nom du groupe (max 40 caractères)  |
+| Champ    | Type    | Requis | Description                                    |
+|----------|---------|--------|------------------------------------------------|
+| name     | string  | Oui    | Nom du groupe (max 40 caractères)              |
+| isPublic | boolean | Non    | Groupe public (défaut: `false`)                |
 
 **Réponse (201) :**
 
@@ -588,6 +584,7 @@ Crée un nouveau groupe.
   "id": 1,
   "name": "Mon groupe",
   "ownerId": "creator_id",
+  "isPublic": false,
   "createdAt": "2025-01-01T00:00:00Z",
   "updatedAt": "2025-01-01T00:00:00Z"
 }
@@ -615,11 +612,13 @@ Liste les groupes du joueur authentifié.
       "id": 1,
       "name": "Mon groupe",
       "ownerId": "owner_id",
+      "isPublic": false,
+      "role": "owner",
       "createdAt": "...",
       "updatedAt": "...",
       "memberCount": 5,
       "previewMembers": [
-        { "playerId": "...", "name": "...", "avatarUrl": "...", "avatar": [...] }
+        { "playerId": "...", "playerName": "...", "discordAvatarUrl": "...", "avatar": [...] }
       ],
       "unreadCount": 3
     }
@@ -631,6 +630,49 @@ Liste les groupes du joueur authentifié.
 - `previewMembers` contient un aperçu de 3 membres maximum
 - `unreadCount` est calculé à partir de `last_read_message_id` du membre
 - Trié par `updated_at` décroissant
+
+---
+
+### `GET /groups/public`
+
+Liste les groupes publics que le joueur n'a pas encore rejoints.
+
+**Auth requise :** Oui
+
+**Query params :**
+
+| Param  | Type   | Requis | Description                                    |
+|--------|--------|--------|------------------------------------------------|
+| search | string | Non    | Recherche par nom (insensible à la casse)       |
+| limit  | number | Non    | Nombre de résultats (1-50, défaut: 20)          |
+| offset | number | Non    | Décalage pour la pagination (défaut: 0)         |
+
+**Réponse (200) :**
+
+```json
+{
+  "groups": [
+    {
+      "id": 1,
+      "name": "Groupe public",
+      "ownerId": "owner_id",
+      "memberCount": 12,
+      "previewMembers": [
+        { "playerId": "...", "playerName": "...", "discordAvatarUrl": "...", "avatar": [...] }
+      ],
+      "createdAt": "...",
+      "updatedAt": "..."
+    }
+  ]
+}
+```
+
+**Comportement serveur :**
+- Retourne uniquement les groupes publics (`is_public = true`)
+- Exclut les groupes dont le joueur est déjà membre
+- `previewMembers` contient un aperçu de 3 membres maximum
+- Trié par `updated_at` décroissant (les plus actifs en premier)
+- Le paramètre `search` filtre par nom avec `ILIKE`
 
 ---
 
@@ -648,6 +690,7 @@ Détails d'un groupe spécifique.
     "id": 1,
     "name": "Mon groupe",
     "ownerId": "owner_id",
+    "isPublic": false,
     "createdAt": "...",
     "updatedAt": "..."
   },
@@ -659,7 +702,6 @@ Détails d'un groupe spécifique.
       "avatar": [...],
       "role": "owner",
       "joinedAt": "...",
-      "isOnline": true,
       "lastEventAt": "..."
     }
   ]
@@ -672,7 +714,7 @@ Détails d'un groupe spécifique.
 
 Renomme un groupe.
 
-**Auth requise :** Oui (propriétaire uniquement)
+**Auth requise :** Oui (owner ou admin)
 
 **Body (JSON) :**
 
@@ -698,7 +740,7 @@ Renomme un groupe.
 
 Supprime un groupe.
 
-**Auth requise :** Oui (propriétaire uniquement)
+**Auth requise :** Oui (owner uniquement)
 
 **Réponse :** `204 No Content`
 
@@ -710,9 +752,9 @@ Supprime un groupe.
 
 ### `POST /groups/:groupId/members`
 
-Ajoute un membre au groupe.
+Ajoute un membre au groupe (invitation).
 
-**Auth requise :** Oui (propriétaire uniquement)
+**Auth requise :** Oui (owner ou admin)
 
 **Body (JSON) :**
 
@@ -725,15 +767,15 @@ Ajoute un membre au groupe.
 **Réponse :** `204 No Content`
 
 **Comportement serveur :**
-- Le nouveau membre doit être ami avec le propriétaire
-- Maximum 12 membres par groupe
+- **Groupe privé** : le nouveau membre doit être ami avec l'inviteur
+- **Groupe public** : pas de vérification d'amitié
+- Maximum 100 membres par groupe
 - Le nouveau membre reçoit le rôle `member`
-- Émet un événement `group_member_added`
+- Émet un événement `group_member_added` avec les infos du membre
 
 **Erreurs possibles :**
-- `400` : Limite de membres atteinte
-- `403` : Pas propriétaire ou le joueur n'est pas ami
-- `409` : Déjà membre
+- `403` : Pas owner/admin, ou joueur pas ami (groupe privé)
+- `409` : Déjà membre ou groupe plein
 
 ---
 
@@ -741,13 +783,14 @@ Ajoute un membre au groupe.
 
 Retire un membre du groupe.
 
-**Auth requise :** Oui (propriétaire uniquement)
+**Auth requise :** Oui (owner ou admin)
 
 **Réponse :** `204 No Content`
 
 **Comportement serveur :**
-- Le propriétaire ne peut pas se retirer lui-même
-- Émet un événement `group_member_removed`
+- L'owner ne peut pas être retiré
+- Un admin ne peut retirer que des membres de rang inférieur (pas d'autres admins ni l'owner)
+- Émet un événement `group_member_removed` avec les infos du membre
 
 ---
 
@@ -760,8 +803,70 @@ Quitter un groupe.
 **Réponse :** `204 No Content`
 
 **Comportement serveur :**
-- Le propriétaire ne peut pas quitter (il doit supprimer le groupe)
-- Émet un événement `group_member_left`
+- L'owner ne peut pas quitter (il doit supprimer le groupe)
+- Émet un événement `group_member_removed` avec les infos du membre
+
+---
+
+### `POST /groups/:groupId/join`
+
+Rejoindre un groupe public.
+
+**Auth requise :** Oui
+
+**Réponse :** `204 No Content`
+
+**Comportement serveur :**
+- Le groupe doit être public (`isPublic: true`)
+- Le joueur ne doit pas déjà être membre
+- Maximum 100 membres
+- Le joueur rejoint avec le rôle `member`
+- Émet un événement `group_member_added` avec les infos du membre
+
+**Erreurs possibles :**
+- `403` : Le groupe n'est pas public
+- `409` : Déjà membre ou groupe plein
+
+---
+
+### `PATCH /groups/:groupId/members/:memberId/role`
+
+Change le rôle d'un membre.
+
+**Auth requise :** Oui (owner ou admin)
+
+**Body (JSON) :**
+
+```json
+{
+  "role": "admin"
+}
+```
+
+| Champ | Type   | Description                          |
+|-------|--------|--------------------------------------|
+| role  | string | Nouveau rôle : `"admin"` ou `"member"` |
+
+**Réponse (200) :**
+
+```json
+{
+  "memberId": "player_id",
+  "oldRole": "member",
+  "newRole": "admin"
+}
+```
+
+**Comportement serveur :**
+- L'owner peut changer le rôle de n'importe qui (sauf lui-même)
+- Un admin peut promouvoir/rétrograder des membres de rang inférieur uniquement
+- On ne peut pas changer son propre rôle
+- Émet un événement `group_role_changed` avec les infos du membre + ancien/nouveau rôle
+
+**Erreurs possibles :**
+- `400` : Rôle invalide, ou tentative de changer son propre rôle
+- `403` : Pas les permissions, ou cible de rang supérieur/égal
+- `409` : Le membre a déjà ce rôle
 
 ---
 
@@ -881,14 +986,75 @@ id: <event_id>
 
 ```json
 {
+  "myProfile": {
+    "playerId": "my_id",
+    "name": "Mon nom en jeu",
+    "avatarUrl": "https://...",
+    "avatar": ["...", "...", "...", "..."],
+    "privacy": {
+      "showGarden": true,
+      "showInventory": true,
+      "showCoins": true,
+      "showActivityLog": true,
+      "showJournal": true,
+      "showStats": true,
+      "hideRoomFromPublicList": false
+    }
+  },
   "friends": [ ],
   "friendRequests": {
     "incoming": [ ],
     "outgoing": [ ]
   },
   "groups": [ ],
-  "conversations": [ ],
-  "modPlayers": [ ]
+  "publicGroups": [
+    {
+      "id": 2,
+      "name": "Groupe public",
+      "ownerId": "owner_id",
+      "memberCount": 12,
+      "previewMembers": [
+        { "playerId": "...", "playerName": "...", "discordAvatarUrl": "...", "avatar": [...] }
+      ],
+      "createdAt": "...",
+      "updatedAt": "..."
+    }
+  ],
+  "conversations": {
+    "friends": [
+      {
+        "conversationId": "id1:id2",
+        "otherPlayerId": "other_id",
+        "otherPlayerName": "Nom",
+        "otherPlayerAvatarUrl": "https://...",
+        "messages": [
+          { "id": 1, "senderId": "...", "recipientId": "...", "body": "...", "createdAt": "...", "readAt": null }
+        ],
+        "unreadCount": 3
+      }
+    ],
+    "groups": [
+      {
+        "groupId": 1,
+        "groupName": "Mon groupe",
+        "messages": [
+          { "id": 42, "senderId": "...", "senderName": "Nom", "senderAvatarUrl": "https://...", "body": "...", "createdAt": "..." }
+        ],
+        "unreadCount": 5
+      }
+    ]
+  },
+  "modPlayers": [ ],
+  "publicRooms": [
+    {
+      "id": "room_id",
+      "playersCount": 5,
+      "userSlots": [
+        { "playerId": "...", "name": "...", "avatarUrl": "...", "coins": 100 }
+      ],
+      "lastUpdatedAt": "2025-01-01T00:00:00Z"
+    }
+  ]
 }
 ```
 
@@ -962,12 +1128,16 @@ async function poll() {
 | `friend_removed`   | Ami supprimé                         | `removerId`, `removedId`, `removedAt`                             |
 | `message`          | Nouveau message direct reçu          | `conversationId`, `senderId`, `recipientId`, `body`, `createdAt`  |
 | `read`             | Messages marqués comme lus           | `conversationId`, `readerId`, `upToId`, `readAt`                  |
-| `presence`         | Changement de statut en ligne        | `playerId`, `online`, `lastEventAt`, `roomId`                     |
-| `group_message`    | Nouveau message de groupe            | `groupId`, `message`                                              |
-| `group_deleted`    | Groupe supprimé                      | `groupId`                                                         |
-| `group_member_added`   | Membre ajouté au groupe          | `groupId`, `memberId`                                             |
-| `group_member_removed` | Membre retiré du groupe          | `groupId`, `memberId`                                             |
-| `group_member_left`    | Membre a quitté le groupe        | `groupId`, `memberId`                                             |
+| `presence`         | Changement de statut en ligne        | `playerId`, `online`, `lastEventAt`, `roomId` (`null` si `hideRoomFromPublicList`) |
+| `group_message`    | Nouveau message de groupe            | `groupId`, `message: { id, senderId, sender: { playerId, name, avatar, avatarUrl }, body, createdAt }` |
+| `group_read`       | Messages de groupe marqués comme lus | `groupId`, `readerId`, `reader: { playerId, name, avatar, avatarUrl }`, `messageId`, `readAt` |
+| `group_deleted`    | Groupe supprimé                      | `groupId`, `deletedBy`, `actor: { playerId, name, avatar, avatarUrl }`, `deletedAt` |
+| `group_updated`    | Groupe renommé                       | `groupId`, `name`, `actor: { playerId, name, avatar, avatarUrl }`, `updatedAt` |
+| `group_member_added`   | Membre ajouté/a rejoint le groupe | `groupId`, `groupName`, `member: { playerId, name, avatar, avatarUrl }`, `addedBy`, `createdAt` |
+| `group_member_removed` | Membre retiré ou a quitté        | `groupId`, `member: { playerId, name, avatar, avatarUrl }`, `removedBy`, `removedAt` |
+| `group_role_changed`   | Rôle d'un membre modifié         | `groupId`, `member: { playerId, name, avatar, avatarUrl }`, `oldRole`, `newRole`, `changedBy`, `changedAt` |
+| `room_changed`         | Un ami a changé de room              | `playerId`, `roomId`, `previousRoomId` (`null` si `hideRoomFromPublicList`) |
+| `privacy_updated`      | Un ami a changé ses privacy settings | `playerId`, `privacy`                                         |
 
 ---
 
@@ -1064,6 +1234,78 @@ Rang d'un joueur dans le classement des œufs.
 
 ---
 
+## Privacy
+
+Endpoints dédiés à la gestion des paramètres de confidentialité du joueur. Permet de lire et modifier les privacy settings sans passer par `/collect-state`.
+
+### `GET /privacy`
+
+Récupère les paramètres de confidentialité actuels du joueur.
+
+**Auth requise :** Oui
+
+**Réponse (200) :**
+
+```json
+{
+  "showGarden": true,
+  "showInventory": true,
+  "showCoins": true,
+  "showActivityLog": true,
+  "showJournal": true,
+  "showStats": true,
+  "hideRoomFromPublicList": false
+}
+```
+
+**Comportement serveur :**
+- Tous les paramètres valent `true` par défaut (sauf `hideRoomFromPublicList` qui vaut `false`)
+- Si le joueur n'a jamais configuré ses privacy settings, les valeurs par défaut sont retournées
+
+---
+
+### `POST /privacy`
+
+Met à jour un ou plusieurs paramètres de confidentialité. Seuls les champs envoyés sont modifiés, les autres restent inchangés.
+
+**Auth requise :** Oui
+
+**Body (JSON) :**
+
+Envoyer uniquement les paramètres à modifier. Tous les champs sont optionnels mais au moins un doit être présent.
+
+```json
+{
+  "showGarden": false,
+  "showCoins": false
+}
+```
+
+**Paramètres acceptés :**
+
+| Champ                  | Type    | Description                              |
+|------------------------|---------|------------------------------------------|
+| showGarden             | boolean | Visibilité du jardin                      |
+| showInventory          | boolean | Visibilité de l'inventaire                |
+| showCoins              | boolean | Visibilité des pièces + leaderboard       |
+| showActivityLog        | boolean | Visibilité du journal d'activité          |
+| showJournal            | boolean | Visibilité du journal                     |
+| showStats              | boolean | Visibilité des stats + leaderboard eggs   |
+| hideRoomFromPublicList | boolean | Cacher la room des listes publiques       |
+
+**Réponse (200) :** L'état complet des privacy settings après mise à jour (même format que `GET /privacy`).
+
+**Comportement serveur :**
+- Upsert en base : crée l'entrée si elle n'existe pas, sinon met à jour uniquement les colonnes fournies
+- Les valeurs non envoyées dans le body ne sont pas modifiées
+- Retourne l'état complet après mise à jour pour que le client puisse synchroniser
+- Émet un événement `privacy_updated` à tous les amis du joueur (via SSE/polling)
+
+**Erreurs possibles :**
+- `400` : Aucun paramètre valide fourni (retourne la liste des paramètres acceptés)
+
+---
+
 ## Codes d'erreur
 
 | Code | Signification                                                   |
@@ -1088,18 +1330,17 @@ Ce champ est mis à jour à chaque appel à `/collect-state`. Le mod doit donc a
 
 ## Système de confidentialité
 
-Chaque joueur peut configurer la visibilité de ses données via le champ `privacy` de `/collect-state` :
+Chaque joueur peut configurer la visibilité de ses données via les endpoints `GET /privacy` et `POST /privacy` :
 
 | Paramètre               | Effet                                                   |
 |--------------------------|----------------------------------------------------------|
-| `showProfile`            | Masque le profil dans les recherches et vues              |
 | `showGarden`             | Masque le jardin dans les vues joueur                     |
 | `showInventory`          | Masque l'inventaire dans les vues joueur                  |
 | `showCoins`              | Masque les pièces + anonymise dans le leaderboard coins   |
 | `showActivityLog`        | Masque le journal d'activité                              |
 | `showJournal`            | Masque le journal                                        |
 | `showStats`              | Masque les stats + anonymise dans le leaderboard eggs     |
-| `hideRoomFromPublicList` | Cache la room des listes publiques                        |
+| `hideRoomFromPublicList` | Cache la room des listes publiques, des events `presence`/`room_changed` et de la liste d'amis |
 
 ---
 

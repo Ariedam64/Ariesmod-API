@@ -1,0 +1,1 @@
+export { registerPrivacyRoutes } from "./privacy";

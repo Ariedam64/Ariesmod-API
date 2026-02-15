@@ -12,6 +12,7 @@ export function registerGroupCreateRoute(app: Application): void {
     const body: any = req.body ?? {};
     const ownerId = req.authenticatedPlayerId!;
     const name = normalizeText(body.name);
+    const isPublic = body.isPublic === true;
 
     if (!ownerId || ownerId.length < 3) {
       return res.status(400).send("Invalid ownerId");
@@ -54,11 +55,11 @@ export function registerGroupCreateRoute(app: Application): void {
     try {
       const { rows } = await query<{ id: number }>(
         `
-        insert into public.groups (name, owner_id, created_at, updated_at)
-        values ($1,$2,$3,$3)
+        insert into public.groups (name, owner_id, is_public, created_at, updated_at)
+        values ($1,$2,$3,$4,$4)
         returning id
         `,
-        [name, ownerId, now],
+        [name, ownerId, isPublic, now],
       );
 
       const groupId = rows[0]?.id;
@@ -86,6 +87,7 @@ export function registerGroupCreateRoute(app: Application): void {
         id: groupId,
         name,
         ownerId,
+        isPublic,
         createdAt: now,
         updatedAt: now,
       });

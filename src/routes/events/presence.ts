@@ -11,7 +11,7 @@ const onlinePlayers = new Map<string, PresenceState>();
 const SWEEP_MS = 60000; // Check every 1 minute
 let sweepTimer: NodeJS.Timeout | null = null;
 
-async function getFriendIds(playerId: string): Promise<string[]> {
+export async function getFriendIds(playerId: string): Promise<string[]> {
   const { rows } = await query<{ friend_id: string }>(
     `
     select
@@ -81,6 +81,49 @@ function startSweep(): void {
   }, SWEEP_MS);
 }
 
+async function emitRoomChanged(
+  playerId: string,
+  roomId: string | null,
+  previousRoomId: string | null,
+): Promise<void> {
+  let friendIds: string[] = [];
+  try {
+    friendIds = await getFriendIds(playerId);
+  } catch (err) {
+    console.error("room_changed friends query error:", err);
+    return;
+  }
+
+  if (friendIds.length === 0) return;
+
+  const payload = {
+    playerId,
+    roomId,
+    previousRoomId,
+  };
+
+  for (const friendId of friendIds) {
+    pushUnifiedEvent(friendId, "room_changed", payload);
+  }
+}
+
+async function getPublicRoomId(
+  playerId: string,
+  roomId: string | null,
+): Promise<string | null> {
+  if (!roomId) return null;
+  try {
+    const result = await query<{ hide_room_from_public_list: boolean | null }>(
+      `select hide_room_from_public_list from public.player_privacy where player_id = $1`,
+      [playerId],
+    );
+    if (result.rows?.[0]?.hide_room_from_public_list === true) return null;
+  } catch (err) {
+    console.error("presence privacy lookup error:", err);
+  }
+  return roomId;
+}
+
 export async function recordPlayerOnline(
   playerId: string,
   lastEventAt: string,
@@ -97,7 +140,12 @@ export async function recordPlayerOnline(
   onlinePlayers.set(playerId, { lastEventAt, roomId });
   startSweep();
 
+  const publicRoomId = await getPublicRoomId(playerId, roomId);
+
   if (!wasOnline) {
-    await emitPresence(playerId, true, lastEventAt, roomId);
+    await emitPresence(playerId, true, lastEventAt, publicRoomId);
+  } else if (prev && prev.roomId !== roomId) {
+    const prevPublicRoomId = await getPublicRoomId(playerId, prev.roomId);
+    await emitRoomChanged(playerId, publicRoomId, prevPublicRoomId);
   }
 }

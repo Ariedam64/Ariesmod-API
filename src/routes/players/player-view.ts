@@ -5,7 +5,6 @@ import { checkRateLimit } from "../../lib/rateLimit";
 import { parseSections } from "../../lib/utils";
 
 type PlayerPrivacyPayload = {
-  showProfile: boolean;
   showGarden: boolean;
   showInventory: boolean;
   showCoins: boolean;
@@ -16,7 +15,6 @@ type PlayerPrivacyPayload = {
 };
 
 const DEFAULT_PRIVACY: PlayerPrivacyPayload = {
-  showProfile: true,
   showGarden: true,
   showInventory: true,
   showCoins: true,
@@ -99,7 +97,6 @@ export function registerPlayerViewRoute(app: Application): void {
       const { rows } = await query(
         `
         select
-          show_profile,
           show_garden,
           show_inventory,
           show_coins,
@@ -121,10 +118,6 @@ export function registerPlayerViewRoute(app: Application): void {
     const rawPrivacy = privacyRow ?? {};
 
     const privacy: PlayerPrivacyPayload = {
-      showProfile:
-        typeof rawPrivacy.show_profile === "boolean"
-          ? rawPrivacy.show_profile
-          : DEFAULT_PRIVACY.showProfile,
       showGarden:
         typeof rawPrivacy.show_garden === "boolean"
           ? rawPrivacy.show_garden
@@ -214,8 +207,8 @@ export function registerPlayerViewRoute(app: Application): void {
             [rpRow.room_id],
           );
           const roomData = roomRows[0] ?? null;
-          // Don't show room if it's private
-          room = roomData && roomData.is_private ? null : roomData;
+          // Don't show room if it's private or player hides it
+          room = roomData && (roomData.is_private || privacy.hideRoomFromPublicList) ? null : roomData;
         }
       } catch (err) {
         console.error("get-player-view room error:", err);
@@ -304,12 +297,9 @@ export function registerPlayerViewRoute(app: Application): void {
 
     const responseBody = {
       playerId: player.id,
-      playerName:
-        wantProfile && privacy.showProfile ? player.name : null,
-      avatarUrl:
-        wantProfile && privacy.showProfile ? player.avatar_url : null,
-      avatar:
-        wantProfile && privacy.showProfile ? player.avatar ?? null : null,
+      playerName: wantProfile ? player.name : null,
+      avatarUrl: wantProfile ? player.avatar_url : null,
+      avatar: wantProfile ? player.avatar ?? null : null,
       coins:
         wantProfile && privacy.showCoins ? player.coins : null,
       room: wantRoom ? room : null,

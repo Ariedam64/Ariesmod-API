@@ -3,7 +3,7 @@ import { query } from "../../db";
 import { getIp } from "../../lib/ip";
 import { checkMessageRateLimit } from "../../lib/messageRateLimit";
 import { MESSAGE_MAX_LENGTH, normalizeId, normalizeText } from "../messages/common";
-import { getGroupAccess, parseGroupId, pushGroupEvent } from "./common";
+import { getGroupAccess, getPlayerInfo, parseGroupId, pushGroupEvent } from "./common";
 import { requireApiKey } from "../../middleware/auth";
 
 export function registerGroupMessageSendRoute(app: Application): void {
@@ -107,12 +107,15 @@ export function registerGroupMessageSendRoute(app: Application): void {
           console.error("group message trim error:", err);
         }
 
+        const senderInfo = await getPlayerInfo(playerId);
+
         const payload = {
           groupId,
           message: {
             id: message.id,
             groupId,
             senderId: playerId,
+            sender: senderInfo,
             body: text,
             createdAt: message.created_at,
           },

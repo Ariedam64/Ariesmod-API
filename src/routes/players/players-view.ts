@@ -5,7 +5,6 @@ import { checkRateLimit } from "../../lib/rateLimit";
 import { parseSections } from "../../lib/utils";
 
 type PlayerPrivacyPayload = {
-  showProfile: boolean;
   showGarden: boolean;
   showInventory: boolean;
   showCoins: boolean;
@@ -16,7 +15,6 @@ type PlayerPrivacyPayload = {
 };
 
 const DEFAULT_PRIVACY: PlayerPrivacyPayload = {
-  showProfile: true,
   showGarden: true,
   showInventory: true,
   showCoins: true,
@@ -114,7 +112,6 @@ export function registerPlayersViewRoute(app: Application): void {
           `
           select
             player_id,
-            show_profile,
             show_garden,
             show_inventory,
             show_coins,
@@ -249,10 +246,6 @@ export function registerPlayersViewRoute(app: Application): void {
         const dbPriv = privacyByPlayerId.get(row.id) ?? null;
 
         const privacy: PlayerPrivacyPayload = {
-          showProfile:
-            typeof dbPriv?.show_profile === "boolean"
-              ? dbPriv.show_profile
-              : DEFAULT_PRIVACY.showProfile,
           showGarden:
             typeof dbPriv?.show_garden === "boolean"
               ? dbPriv.show_garden
@@ -303,8 +296,10 @@ export function registerPlayersViewRoute(app: Application): void {
         const roomId = needRoom
           ? roomIdByPlayerId.get(row.id)
           : undefined;
-        const room =
+        const roomData =
           needRoom && roomId ? roomMap.get(roomId) ?? null : null;
+        // Don't show room if it's private or player hides it
+        const room = roomData && (roomData.is_private || privacy.hideRoomFromPublicList) ? null : roomData;
 
         const view: any = {
           playerId: row.id,
@@ -317,15 +312,9 @@ export function registerPlayersViewRoute(app: Application): void {
 
         // profile
         if (needProfile) {
-          view.playerName = privacy.showProfile
-            ? row.name ?? row.id
-            : null;
-          view.avatarUrl = privacy.showProfile
-            ? row.avatar_url ?? null
-            : null;
-          view.avatar = privacy.showProfile
-            ? row.avatar ?? null
-            : null;
+          view.playerName = row.name ?? row.id;
+          view.avatarUrl = row.avatar_url ?? null;
+          view.avatar = row.avatar ?? null;
           view.coins = privacy.showCoins
             ? row.coins ?? null
             : null;

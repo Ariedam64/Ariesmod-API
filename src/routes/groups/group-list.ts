@@ -29,6 +29,7 @@ export function registerGroupListRoute(app: Application): void {
           id: number;
           name: string;
           owner_id: string;
+          is_public: boolean;
           created_at: string;
           updated_at: string;
           role: string;
@@ -41,6 +42,7 @@ export function registerGroupListRoute(app: Application): void {
             g.id,
             g.name,
             g.owner_id,
+            g.is_public,
             g.created_at,
             g.updated_at,
             gm.role,
@@ -63,7 +65,8 @@ export function registerGroupListRoute(app: Application): void {
               jsonb_build_object(
                 'playerId', p.id,
                 'playerName', coalesce(p.name, p.id),
-                'discordAvatarUrl', p.avatar_url
+                'discordAvatarUrl', p.avatar_url,
+                'avatar', p.avatar
               )
               order by gmp.joined_at asc
             ) as preview_members
@@ -86,6 +89,7 @@ export function registerGroupListRoute(app: Application): void {
         id: row.id,
         name: row.name,
         ownerId: row.owner_id,
+        isPublic: row.is_public,
         role: row.role,
         memberCount: Number(row.member_count ?? "0"),
         previewMembers: Array.isArray(row.preview_members)
