@@ -30,11 +30,11 @@ export function registerLeaderboardCoinsRankRoute(app: Application): void {
         avatar_url: string | null;
         avatar: unknown;
         coins: string | number;
-        eggs_hatched: string | number;
         last_event_at: string | null;
         show_coins: boolean | null;
         rank: string | number;
         total: string | number;
+        coins_rank_snapshot_24h: number | null;
       }>(
         `
         with ranked as (
@@ -44,9 +44,9 @@ export function registerLeaderboardCoinsRankRoute(app: Application): void {
             p.avatar_url,
             p.avatar,
             ls.coins,
-            ls.eggs_hatched,
             p.last_event_at,
             pr.show_coins,
+            ls.coins_rank_snapshot_24h,
             row_number() over (
               order by ls.coins desc, p.created_at desc
             ) as rank,
@@ -70,10 +70,15 @@ export function registerLeaderboardCoinsRankRoute(app: Application): void {
       }
 
       const anonymized = row.show_coins === false;
+      const currentRank = Number(row.rank ?? 0);
+      const rankChange = row.coins_rank_snapshot_24h != null
+        ? row.coins_rank_snapshot_24h - currentRank
+        : null;
 
       return res.status(200).json({
-        rank: Number(row.rank ?? 0),
+        rank: currentRank,
         total: Number(row.total ?? 0),
+        rankChange,
         row: {
           ...(anonymized
             ? {
@@ -90,8 +95,7 @@ export function registerLeaderboardCoinsRankRoute(app: Application): void {
                 avatar: row.avatar ?? null,
                 lastEventAt: row.last_event_at ?? null,
               }),
-          coins: Number(row.coins ?? 0),
-          eggsHatched: Number(row.eggs_hatched ?? 0),
+          total: Number(row.coins ?? 0),
         },
       });
     } catch (err) {

@@ -41,7 +41,8 @@ export function registerGroupDetailRoute(app: Application): void {
       return res.status(404).send("Group not found");
     }
 
-    if (!access.role) {
+    // Allow non-members to view public groups
+    if (!access.role && !access.isPublic) {
       return res.status(403).send("Not a group member");
     }
 
@@ -57,6 +58,8 @@ export function registerGroupDetailRoute(app: Application): void {
           updatedAt: access.updatedAt,
         },
         members,
+        isMember: access.role !== null,
+        role: access.role,
       });
     } catch (err) {
       console.error("group detail members error:", err);

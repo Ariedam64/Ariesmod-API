@@ -5,6 +5,7 @@ import { isPlayerConnected, normalizeId } from "../messages/common";
 import {
   addUnifiedStream,
   getLastEventId,
+  getServerSessionId,
 } from "./hub";
 import { buildWelcomeData } from "./welcome";
 import { requireApiKey } from "../../middleware/auth";
@@ -68,6 +69,7 @@ export function registerUnifiedStreamRoute(app: Application): void {
       `event: connected\ndata: ${JSON.stringify({
         playerId,
         lastEventId: lastKnown,
+        serverSessionId: getServerSessionId(),
       })}\n\n`,
     );
 

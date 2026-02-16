@@ -4,6 +4,7 @@ import { getIp } from "../../lib/ip";
 import { checkRateLimit } from "../../lib/rateLimit";
 import { pushUnifiedEvent } from "../events/hub";
 import { requireApiKey } from "../../middleware/auth";
+import { CONNECTED_TTL_MS } from "../messages/common";
 
 export function registerFriendRespondRoute(app: Application): void {
 
@@ -159,13 +160,75 @@ app.post("/friend-respond", requireApiKey, async (req: Request, res: Response) =
       return res.status(500).send("DB error (relationship update)");
     }
 
+    // Fetch room and online status for both players
+    let requesterRoomId: string | null = null;
+    let requesterIsOnline = false;
+    let responderRoomId: string | null = null;
+    let responderIsOnline = false;
+
+    try {
+      const { rows } = await query<{
+        player_id: string;
+        last_event_at: string | null;
+        room_id: string | null;
+        is_private: boolean | null;
+        hide_room_from_public_list: boolean | null;
+      }>(
+        `
+        select
+          p.id as player_id,
+          p.last_event_at,
+          rp.room_id,
+          r.is_private,
+          pp.hide_room_from_public_list
+        from public.players p
+        left join public.room_players rp
+          on rp.player_id = p.id
+          and rp.left_at is null
+        left join public.rooms r
+          on r.id = rp.room_id
+        left join public.player_privacy pp
+          on pp.player_id = p.id
+        where p.id = any($1::text[])
+        `,
+        [[rel.requested_by, playerId]],
+      );
+
+      const nowTs = Date.now();
+      for (const row of rows) {
+        const lastEventTs = row.last_event_at
+          ? Date.parse(row.last_event_at)
+          : null;
+        const isOnline =
+          lastEventTs !== null && nowTs - lastEventTs <= CONNECTED_TTL_MS;
+        const roomHidden =
+          row.is_private || row.hide_room_from_public_list === true;
+        const roomId = row.room_id && !roomHidden ? row.room_id : null;
+
+        if (row.player_id === rel.requested_by) {
+          requesterRoomId = roomId;
+          requesterIsOnline = isOnline;
+        } else if (row.player_id === playerId) {
+          responderRoomId = roomId;
+          responderIsOnline = isOnline;
+        }
+      }
+    } catch (err) {
+      console.error("friend-respond presence fetch error:", err);
+      // Continue without presence info if fetch fails
+    }
+
     const payload = {
       requesterId: rel.requested_by,
       requesterName: requester?.name ?? rel.requested_by,
       requesterAvatarUrl: requester?.avatar_url ?? null,
+      requesterRoomId,
+      requesterIsOnline,
       responderId: playerId,
       responderName: responder?.name ?? playerId,
       responderAvatarUrl: responder?.avatar_url ?? null,
+      responderRoomId,
+      responderIsOnline,
       action,
       updatedAt: now,
     };

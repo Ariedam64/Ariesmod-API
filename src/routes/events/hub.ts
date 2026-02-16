@@ -25,6 +25,9 @@ type PlayerState = {
 const MAX_EVENTS = 200;
 const HEARTBEAT_MS = 30000;
 
+// Generate unique server session ID at startup to detect restarts
+const SERVER_SESSION_ID = `${Date.now()}-${Math.random().toString(36).substring(2, 15)}`;
+
 const states = new Map<string, PlayerState>();
 const streams = new Map<string, Set<StreamConnection>>();
 let heartbeatTimer: NodeJS.Timeout | null = null;
@@ -111,6 +114,10 @@ export function getEventsSince(
 
 export function getLastEventId(playerId: string): number {
   return getLastId(getState(playerId));
+}
+
+export function getServerSessionId(): string {
+  return SERVER_SESSION_ID;
 }
 
 export function writeUnifiedEvents(

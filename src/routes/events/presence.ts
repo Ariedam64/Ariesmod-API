@@ -31,21 +31,46 @@ export async function getFriendIds(playerId: string): Promise<string[]> {
     .filter((id) => typeof id === "string" && id.length > 0);
 }
 
+export async function getGroupMemberIds(playerId: string): Promise<string[]> {
+  const { rows } = await query<{ member_id: string }>(
+    `
+    select distinct gm.player_id as member_id
+    from public.group_members gm
+    where gm.group_id in (
+      select group_id
+      from public.group_members
+      where player_id = $1
+    )
+      and gm.player_id != $1
+    `,
+    [playerId],
+  );
+
+  return (rows ?? [])
+    .map((row) => row.member_id)
+    .filter((id) => typeof id === "string" && id.length > 0);
+}
+
 async function emitPresence(
   playerId: string,
   online: boolean,
   lastEventAt: string,
   roomId: string | null,
 ): Promise<void> {
-  let friendIds: string[] = [];
+  let recipientIds: string[] = [];
   try {
-    friendIds = await getFriendIds(playerId);
+    const [friendIds, groupMemberIds] = await Promise.all([
+      getFriendIds(playerId),
+      getGroupMemberIds(playerId),
+    ]);
+    // Combine and deduplicate
+    recipientIds = Array.from(new Set([...friendIds, ...groupMemberIds]));
   } catch (err) {
-    console.error("presence friends query error:", err);
+    console.error("presence recipients query error:", err);
     return;
   }
 
-  if (friendIds.length === 0) return;
+  if (recipientIds.length === 0) return;
 
   const payload = {
     playerId,
@@ -54,8 +79,8 @@ async function emitPresence(
     roomId: online ? roomId : null,
   };
 
-  for (const friendId of friendIds) {
-    pushUnifiedEvent(friendId, "presence", payload);
+  for (const recipientId of recipientIds) {
+    pushUnifiedEvent(recipientId, "presence", payload);
   }
 }
 
@@ -86,15 +111,20 @@ async function emitRoomChanged(
   roomId: string | null,
   previousRoomId: string | null,
 ): Promise<void> {
-  let friendIds: string[] = [];
+  let recipientIds: string[] = [];
   try {
-    friendIds = await getFriendIds(playerId);
+    const [friendIds, groupMemberIds] = await Promise.all([
+      getFriendIds(playerId),
+      getGroupMemberIds(playerId),
+    ]);
+    // Combine and deduplicate
+    recipientIds = Array.from(new Set([...friendIds, ...groupMemberIds]));
   } catch (err) {
-    console.error("room_changed friends query error:", err);
+    console.error("room_changed recipients query error:", err);
     return;
   }
 
-  if (friendIds.length === 0) return;
+  if (recipientIds.length === 0) return;
 
   const payload = {
     playerId,
@@ -102,8 +132,8 @@ async function emitRoomChanged(
     previousRoomId,
   };
 
-  for (const friendId of friendIds) {
-    pushUnifiedEvent(friendId, "room_changed", payload);
+  for (const recipientId of recipientIds) {
+    pushUnifiedEvent(recipientId, "room_changed", payload);
   }
 }
 

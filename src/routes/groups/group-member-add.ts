@@ -8,11 +8,13 @@ import {
   canManageMembers,
   getGroupAccess,
   getGroupMemberCount,
+  getGroupMessages,
   getPlayerInfo,
   parseGroupId,
   pushGroupEvent,
   recordGroupActivity,
 } from "./common";
+import { pushUnifiedEvent } from "../events/hub";
 import { requireApiKey } from "../../middleware/auth";
 
 export function registerGroupMemberAddRoute(app: Application): void {
@@ -146,13 +148,57 @@ export function registerGroupMemberAddRoute(app: Application): void {
       });
 
       const memberInfo = await getPlayerInfo(memberId);
-      await pushGroupEvent(groupId, "group_member_added", {
+
+      // Send regular event to existing members (exclude the new member)
+      await pushGroupEvent(
         groupId,
-        groupName: access.name,
-        member: memberInfo,
-        addedBy: playerId,
-        createdAt: now,
-      });
+        "group_member_added",
+        {
+          groupId,
+          groupName: access.name,
+          member: memberInfo,
+          addedBy: playerId,
+          createdAt: now,
+        },
+        [], // extraMemberIds
+        [memberId], // excludeMemberIds - exclude the new member
+      );
+
+      // Fetch recent messages and send enriched event to new member
+      try {
+        const messages = await getGroupMessages(groupId, memberId, 50);
+        const unreadCount = messages.filter(
+          (msg) => msg.senderId !== memberId && msg.readAt === null,
+        ).length;
+
+        const eventPayload: any = {
+          groupId,
+          groupName: access.name,
+          member: memberInfo,
+          addedBy: playerId,
+          createdAt: now,
+        };
+
+        // Only include conversation if there are messages
+        if (messages.length > 0) {
+          eventPayload.conversation = {
+            messages,
+            unreadCount,
+          };
+        }
+
+        pushUnifiedEvent(memberId, "group_member_added", eventPayload);
+      } catch (err) {
+        console.error("Failed to fetch group messages for new member:", err);
+        // Still send event without conversation if fetch fails
+        pushUnifiedEvent(memberId, "group_member_added", {
+          groupId,
+          groupName: access.name,
+          member: memberInfo,
+          addedBy: playerId,
+          createdAt: now,
+        });
+      }
 
       return res.status(204).send();
     } catch (err) {

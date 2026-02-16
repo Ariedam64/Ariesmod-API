@@ -5,6 +5,7 @@ import { isPlayerConnected, normalizeId } from "../messages/common";
 import {
   getEventsSince,
   getLastEventId,
+  getServerSessionId,
   waitForEvents,
 } from "./hub";
 import { requireApiKey } from "../../middleware/auth";
@@ -54,12 +55,14 @@ export function registerUnifiedPollRoute(app: Application): void {
     if (sinceId === 0) {
       try {
         const lastEventId = getLastEventId(playerId);
+        const serverSessionId = getServerSessionId();
         const welcomeData = await buildWelcomeData(playerId);
         const now = new Date().toISOString();
 
         return res.status(200).json({
           playerId,
           lastEventId,
+          serverSessionId,
           events: [
             {
               id: 0,
@@ -67,6 +70,7 @@ export function registerUnifiedPollRoute(app: Application): void {
               data: {
                 playerId,
                 lastEventId,
+                serverSessionId,
               },
               ts: now,
             },
@@ -89,6 +93,7 @@ export function registerUnifiedPollRoute(app: Application): void {
       return res.status(200).json({
         playerId,
         lastEventId: getLastEventId(playerId),
+        serverSessionId: getServerSessionId(),
         events: immediate,
       });
     }
@@ -106,6 +111,7 @@ export function registerUnifiedPollRoute(app: Application): void {
     return res.status(200).json({
       playerId,
       lastEventId: result.lastEventId,
+      serverSessionId: getServerSessionId(),
       events: result.events,
     });
   });

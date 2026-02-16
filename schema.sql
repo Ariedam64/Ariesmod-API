@@ -289,6 +289,9 @@ create table if not exists public.leaderboard_stats (
   coins bigint not null default 0,
   eggs_hatched bigint not null default 0,
   updated_at timestamptz not null default now(),
+  coins_rank_snapshot integer,
+  eggs_rank_snapshot integer,
+  snapshot_at date,
   constraint leaderboard_stats_player_id_fkey
     foreign key (player_id) references public.players (id) on delete cascade
 );

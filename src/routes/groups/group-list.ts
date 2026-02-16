@@ -57,6 +57,7 @@ export function registerGroupListRoute(app: Application): void {
               from public.group_messages gmsg
               where gmsg.group_id = g.id
                 and (gm.last_read_message_id is null or gmsg.id > gm.last_read_message_id)
+                and gmsg.sender_id != $1
             ) as unread_count
           from public.group_members gm
           join public.groups g on g.id = gm.group_id

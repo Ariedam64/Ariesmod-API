@@ -2,7 +2,7 @@ import type { Application, Request, Response } from "express";
 import { query } from "../../db";
 import { requireApiKey } from "../../middleware/auth";
 import { pushUnifiedEvent } from "../events/hub";
-import { getFriendIds } from "../events/presence";
+import { getFriendIds, getGroupMemberIds } from "../events/presence";
 
 const VALID_SETTINGS = [
   "showGarden",
@@ -149,12 +149,18 @@ export function registerPrivacyRoutes(app: Application): void {
         hideRoomFromPublicList: row?.hide_room_from_public_list === true,
       };
 
-      // Émettre l'événement privacy_updated aux amis
+      // Émettre l'événement privacy_updated aux amis et membres de groupes
       try {
-        const friendIds = await getFriendIds(pid);
+        const [friendIds, groupMemberIds] = await Promise.all([
+          getFriendIds(pid),
+          getGroupMemberIds(pid),
+        ]);
+        // Combine and deduplicate
+        const recipientIds = Array.from(new Set([...friendIds, ...groupMemberIds]));
+
         const payload = { playerId: pid, privacy };
-        for (const friendId of friendIds) {
-          pushUnifiedEvent(friendId, "privacy_updated", payload);
+        for (const recipientId of recipientIds) {
+          pushUnifiedEvent(recipientId, "privacy_updated", payload);
         }
 
         // Si hideRoomFromPublicList a changé, mettre à jour rooms.is_private et émettre room_changed
@@ -174,13 +180,13 @@ export function registerPrivacyRoutes(app: Application): void {
               [privacy.hideRoomFromPublicList, currentRoomId],
             );
 
-            // Émettre room_changed aux amis
-            if (friendIds.length > 0) {
+            // Émettre room_changed aux amis et membres de groupes
+            if (recipientIds.length > 0) {
               const visibleRoomId = privacy.hideRoomFromPublicList ? null : currentRoomId;
               const previousRoomId = privacy.hideRoomFromPublicList ? currentRoomId : null;
               const roomPayload = { playerId: pid, roomId: visibleRoomId, previousRoomId };
-              for (const friendId of friendIds) {
-                pushUnifiedEvent(friendId, "room_changed", roomPayload);
+              for (const recipientId of recipientIds) {
+                pushUnifiedEvent(recipientId, "room_changed", roomPayload);
               }
             }
           }

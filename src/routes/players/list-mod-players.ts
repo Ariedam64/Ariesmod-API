@@ -2,6 +2,7 @@ import type { Application, Request, Response } from "express";
 import { query } from "../../db";
 import { getIp } from "../../lib/ip";
 import { checkRateLimit } from "../../lib/rateLimit";
+import { CONNECTED_TTL_MS } from "../messages/common";
 
 export function registerListModPlayersRoute(app: Application): void {
   app.get("/list-mod-players", async (req: Request, res: Response) => {
@@ -59,13 +60,23 @@ export function registerListModPlayersRoute(app: Application): void {
         params,
       );
 
-      const result = (rows ?? []).map((row: any) => ({
-        playerId: row.id,
-        playerName: row.name ?? row.id,
-        avatarUrl: row.avatar_url ?? null,
-        avatar: row.avatar ?? null,
-        lastEventAt: row.last_event_at ?? null,
-      }));
+      const now = Date.now();
+      const result = (rows ?? []).map((row: any) => {
+        const lastEventTs = row.last_event_at
+          ? Date.parse(row.last_event_at)
+          : null;
+        const isOnline =
+          lastEventTs !== null && now - lastEventTs <= CONNECTED_TTL_MS;
+
+        return {
+          playerId: row.id,
+          playerName: row.name ?? row.id,
+          avatarUrl: row.avatar_url ?? null,
+          avatar: row.avatar ?? null,
+          lastEventAt: row.last_event_at ?? null,
+          isOnline,
+        };
+      });
 
       return res.status(200).json(result);
     } catch (err) {

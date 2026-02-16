@@ -3,8 +3,9 @@ import { query } from "../../db";
 import { getIp } from "../../lib/ip";
 import { checkRateLimit } from "../../lib/rateLimit";
 import { normalizeId, normalizeText } from "../messages/common";
-import { GROUP_NAME_MAX, recordGroupActivity } from "./common";
+import { GROUP_NAME_MAX, recordGroupActivity, getPlayerInfo } from "./common";
 import { requireApiKey } from "../../middleware/auth";
+import { pushUnifiedEvent } from "../events/hub";
 
 export function registerGroupCreateRoute(app: Application): void {
   app.post("/groups", requireApiKey, async (req: Request, res: Response) => {
@@ -82,6 +83,24 @@ export function registerGroupCreateRoute(app: Application): void {
         actorId: ownerId,
         createdAt: now,
       });
+
+      // Envoyer l'event au créateur (pas de conversation car groupe vide)
+      const ownerInfo = await getPlayerInfo(ownerId);
+      if (ownerInfo) {
+        pushUnifiedEvent(ownerId, "group_created", {
+          groupId,
+          groupName: name,
+          member: {
+            playerId: ownerInfo.playerId,
+            name: ownerInfo.name,
+            avatarUrl: ownerInfo.avatarUrl,
+            avatar: ownerInfo.avatar,
+            role: "owner",
+            joinedAt: now,
+          },
+          createdAt: now,
+        });
+      }
 
       return res.status(201).json({
         id: groupId,

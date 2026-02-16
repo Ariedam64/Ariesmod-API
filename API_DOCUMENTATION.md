@@ -169,8 +169,16 @@ Récupère le profil et l'état d'un joueur unique.
   "activityLog": { },
   "journal": { },
   "leaderboard": {
-    "coinsRank": 5,
-    "eggsRank": 12
+    "coins": {
+      "rank": 5,
+      "total": 12350,
+      "rankChange": 3
+    },
+    "eggsHatched": {
+      "rank": 12,
+      "total": 87,
+      "rankChange": -1
+    }
   }
 }
 ```
@@ -179,7 +187,10 @@ Récupère le profil et l'état d'un joueur unique.
 - Respecte les paramètres de confidentialité du joueur (les sections masquées ne sont pas retournées)
 - Le statut en ligne est calculé sur un seuil de 6 minutes depuis `last_event_at`
 - La room n'est incluse que si elle n'est pas privée et que le joueur n'a pas activé `hideRoomFromPublicList`
-- Les rangs du leaderboard sont calculés dynamiquement
+- Le leaderboard contient :
+  - `rank` : Position actuelle dans le classement
+  - `total` : Valeur de la catégorie (coins ou eggs hatched)
+  - `rankChange` : Nombre de places gagnées (+) ou perdues (-) depuis le dernier snapshot journalier. `null` si pas de snapshot.
 
 ---
 
@@ -234,7 +245,8 @@ Liste les joueurs qui ont le mod installé.
     "playerName": "Nom",
     "avatarUrl": "https://...",
     "avatar": ["...", "...", "...", "..."],
-    "lastEventAt": "2025-01-01T00:00:00Z"
+    "lastEventAt": "2025-01-01T00:00:00Z",
+    "isOnline": true
   }
 ]
 ```
@@ -243,6 +255,7 @@ Liste les joueurs qui ont le mod installé.
 - Filtre : `has_mod_installed = true`
 - Recherche par `ILIKE` sur le nom ou l'ID
 - Trié par `last_event_at` décroissant (les plus récemment actifs en premier)
+- `isOnline` est calculé avec un seuil de 6 minutes depuis `last_event_at`
 
 ---
 
@@ -680,7 +693,11 @@ Liste les groupes publics que le joueur n'a pas encore rejoints.
 
 Détails d'un groupe spécifique.
 
-**Auth requise :** Oui (doit être membre du groupe)
+**Auth requise :** Oui
+
+**Permissions :**
+- **Groupes publics** : Accessible par tous (membres et non-membres)
+- **Groupes privés** : Accessible uniquement par les membres
 
 **Réponse (200) :**
 
@@ -702,26 +719,58 @@ Détails d'un groupe spécifique.
       "avatar": [...],
       "role": "owner",
       "joinedAt": "...",
-      "lastEventAt": "..."
+      "lastEventAt": "...",
+      "roomId": "room_id_or_null",
+      "isOnline": true
     }
-  ]
+  ],
+  "isMember": true,
+  "role": "member"
 }
 ```
+
+**Comportement serveur :**
+- Les groupes publics peuvent être consultés par n'importe qui (pour faciliter la décision de rejoindre)
+- Les groupes privés nécessitent d'être membre
+- `isMember` indique si le joueur authentifié est membre du groupe
+- `role` contient le rôle du joueur s'il est membre, sinon `null`
+- Pour chaque membre, le statut `isOnline` est calculé (seuil de 6 minutes)
+- `roomId` est `null` si la room est privée ou si le membre a activé `hideRoomFromPublicList`
+
+**Erreurs possibles :**
+- `403` : Groupe privé et non-membre
+- `404` : Groupe introuvable
 
 ---
 
 ### `PATCH /groups/:groupId`
 
-Renomme un groupe.
+Met à jour un groupe (nom et/ou visibilité).
 
 **Auth requise :** Oui (owner ou admin)
 
 **Body (JSON) :**
 
+Au moins un des champs suivants doit être fourni :
+
 ```json
 {
-  "name": "Nouveau nom"
+  "name": "Nouveau nom",       // Optionnel : nouveau nom du groupe (max 40 caractères)
+  "isPublic": false            // Optionnel : true = public, false = privé
 }
+```
+
+**Exemples :**
+
+```json
+// Renommer uniquement
+{ "name": "Mon Super Groupe" }
+
+// Changer la visibilité uniquement
+{ "isPublic": false }
+
+// Renommer et changer la visibilité
+{ "name": "Groupe Secret", "isPublic": false }
 ```
 
 **Réponse (200) :**
@@ -729,7 +778,8 @@ Renomme un groupe.
 ```json
 {
   "groupId": 1,
-  "name": "Nouveau nom",
+  "name": "Nouveau nom",       // Présent si modifié
+  "isPublic": false,           // Présent si modifié
   "updatedAt": "..."
 }
 ```
@@ -1020,6 +1070,18 @@ id: <event_id>
       "updatedAt": "..."
     }
   ],
+  "groupMembers": [
+    {
+      "playerId": "member_id",
+      "name": "Nom du membre",
+      "avatarUrl": "https://...",
+      "avatar": ["...", "...", "...", "..."],
+      "lastEventAt": "2025-01-01T00:00:00Z",
+      "roomId": "room_id_or_null",
+      "isOnline": true,
+      "groupIds": [1, 2]
+    }
+  ],
   "conversations": {
     "friends": [
       {
@@ -1038,13 +1100,22 @@ id: <event_id>
         "groupId": 1,
         "groupName": "Mon groupe",
         "messages": [
-          { "id": 42, "senderId": "...", "senderName": "Nom", "senderAvatarUrl": "https://...", "body": "...", "createdAt": "..." }
+          { "id": 42, "senderId": "...", "senderName": "Nom", "senderAvatarUrl": "https://...", "body": "...", "createdAt": "...", "readAt": "..." }
         ],
         "unreadCount": 5
       }
     ]
   },
-  "modPlayers": [ ],
+  "modPlayers": [
+    {
+      "playerId": "123",
+      "playerName": "Nom",
+      "avatarUrl": "https://...",
+      "avatar": ["...", "...", "...", "..."],
+      "lastEventAt": "2025-01-01T00:00:00Z",
+      "isOnline": true
+    }
+  ],
   "publicRooms": [
     {
       "id": "room_id",
@@ -1054,9 +1125,81 @@ id: <event_id>
       ],
       "lastUpdatedAt": "2025-01-01T00:00:00Z"
     }
-  ]
+  ],
+  "leaderboard": {
+    "coins": {
+      "top": [
+        {
+          "playerId": "player_123",
+          "playerName": "TopPlayer1",
+          "avatarUrl": "https://cdn.discordapp.com/avatars/...",
+          "avatar": ["body1", "eyes2", "mouth3", "accessory1"],
+          "rank": 1,
+          "total": 50000,
+          "rankChange": 0
+        },
+        {
+          "playerId": "player_456",
+          "playerName": "TopPlayer2",
+          "avatarUrl": "https://...",
+          "avatar": ["...", "...", "...", "..."],
+          "rank": 2,
+          "total": 45000,
+          "rankChange": 3
+        }
+        // ... jusqu'à 15 joueurs
+      ],
+      "myRank": {
+        "playerId": "my_id",
+        "playerName": "Mon nom",
+        "avatarUrl": "https://...",
+        "avatar": ["...", "...", "...", "..."],
+        "rank": 42,
+        "total": 12350,
+        "rankChange": -2
+      }
+    },
+    "eggsHatched": {
+      "top": [
+        {
+          "playerId": "player_789",
+          "playerName": "EggMaster",
+          "avatarUrl": "https://...",
+          "avatar": ["...", "...", "...", "..."],
+          "rank": 1,
+          "total": 235,
+          "rankChange": 1
+        }
+        // ... jusqu'à 15 joueurs
+      ],
+      "myRank": {
+        "playerId": "my_id",
+        "playerName": "Mon nom",
+        "avatarUrl": "https://...",
+        "avatar": ["...", "...", "...", "..."],
+        "rank": 18,
+        "total": 87,
+        "rankChange": null
+      }
+    }
+  }
 }
 ```
+
+**Note sur `groupMembers` :** Cette section contient tous les membres de tous vos groupes (sauf vous-même), avec leur statut en ligne, dernière activité, room actuelle et la liste des IDs de groupes que vous avez en commun. Un membre peut apparaître dans plusieurs groupes, son champ `groupIds` indique lesquels.
+
+**Note sur `modPlayers` :** Cette section contient tous les joueurs qui ont le mod installé (`has_mod_installed = true`), limité aux 100 plus récemment actifs. Le champ `isOnline` est calculé avec un seuil de 6 minutes depuis `last_event_at`.
+
+**Note sur `leaderboard` :** Cette section contient les classements pour chaque catégorie (coins, eggsHatched). Pour chaque catégorie :
+- `top` : Les 15 premiers joueurs, triés par ordre décroissant. Le champ `total` correspond au nombre de coins (catégorie coins) ou au nombre d'eggs hatched (catégorie eggsHatched).
+- `myRank` : Votre position dans le classement. Peut être `null` si vous n'avez pas de stats dans cette catégorie.
+- `rankChange` : Nombre de places gagnées (+) ou perdues (-) depuis le dernier snapshot. `null` si pas encore de snapshot. Exemple : `+3` = gagné 3 places, `-2` = perdu 2 places.
+- Les joueurs avec `show_coins: false` (pour coins) ou `show_stats: false` (pour eggsHatched) apparaissent anonymisés : `playerId: "null"`, `playerName: "anonymous"`, `avatarUrl: null`, `avatar: null`.
+- Le snapshot des rangs est mis à jour automatiquement **toutes les 10 minutes** pour tous les joueurs (via cron job). Cela garantit que les joueurs inactifs ont aussi un `rankChange` cohérent.
+
+**Note sur `readAt` (messages de groupe) :** Pour les messages de groupe, `readAt` fonctionne comme WhatsApp/Telegram :
+- **Messages reçus** (des autres) : `readAt` indique si **vous** avez lu le message. Basé sur votre `last_read_message_id`. Si `message.id <= votre_last_read_message_id`, alors `readAt` = `createdAt`, sinon `null`.
+- **Messages envoyés** (les vôtres) : `readAt` indique si **au moins un autre membre** a lu le message. Si au moins un membre a `last_read_message_id >= message.id`, alors `readAt` = `createdAt`, sinon `null`.
 
 ---
 
@@ -1121,23 +1264,37 @@ async function poll() {
 | Type               | Description                          | Données clés                                                      |
 |--------------------|--------------------------------------|-------------------------------------------------------------------|
 | `connected`        | Connexion établie                    | `playerId`, `lastEventId`                                         |
-| `welcome`          | État initial complet                 | `friends`, `friendRequests`, `groups`, `conversations`, `modPlayers` |
+| `welcome`          | État initial complet                 | `friends`, `friendRequests`, `groups`, `groupMembers`, `conversations`, `modPlayers`, `leaderboard` |
 | `friend_request`   | Nouvelle demande d'ami reçue         | `requesterId`, `requesterName`, `targetId`, `targetName`, `createdAt` |
-| `friend_response`  | Réponse à une demande d'ami          | `requesterId`, `responderId`, `action`, `updatedAt`               |
+| `friend_response`  | Réponse à une demande d'ami          | `requesterId`, `requesterName`, `requesterAvatarUrl`, `responderId`, `responderName`, `responderAvatarUrl`, `action`, `updatedAt`, + si `action: "accept"` : `requesterRoomId`, `requesterIsOnline`, `responderRoomId`, `responderIsOnline` |
 | `friend_cancelled` | Demande d'ami annulée                | `requesterId`, `targetId`, `cancelledAt`                          |
 | `friend_removed`   | Ami supprimé                         | `removerId`, `removedId`, `removedAt`                             |
 | `message`          | Nouveau message direct reçu          | `conversationId`, `senderId`, `recipientId`, `body`, `createdAt`  |
 | `read`             | Messages marqués comme lus           | `conversationId`, `readerId`, `upToId`, `readAt`                  |
-| `presence`         | Changement de statut en ligne        | `playerId`, `online`, `lastEventAt`, `roomId` (`null` si `hideRoomFromPublicList`) |
+| `presence`         | Changement de statut en ligne d'un ami ou membre de groupe | `playerId`, `online`, `lastEventAt`, `roomId` (`null` si `hideRoomFromPublicList`) |
 | `group_message`    | Nouveau message de groupe            | `groupId`, `message: { id, senderId, sender: { playerId, name, avatar, avatarUrl }, body, createdAt }` |
 | `group_read`       | Messages de groupe marqués comme lus | `groupId`, `readerId`, `reader: { playerId, name, avatar, avatarUrl }`, `messageId`, `readAt` |
 | `group_deleted`    | Groupe supprimé                      | `groupId`, `deletedBy`, `actor: { playerId, name, avatar, avatarUrl }`, `deletedAt` |
-| `group_updated`    | Groupe renommé                       | `groupId`, `name`, `actor: { playerId, name, avatar, avatarUrl }`, `updatedAt` |
-| `group_member_added`   | Membre ajouté/a rejoint le groupe | `groupId`, `groupName`, `member: { playerId, name, avatar, avatarUrl }`, `addedBy`, `createdAt` |
+| `group_updated`    | Groupe mis à jour (nom et/ou visibilité) | `groupId`, `name` (si modifié), `isPublic` (si modifié), `actor: { playerId, name, avatar, avatarUrl }`, `updatedAt` |
+| `group_member_added`   | Membre ajouté/a rejoint le groupe | `groupId`, `groupName`, `member: { playerId, name, avatar, avatarUrl }`, `addedBy`, `createdAt`, `conversation` (seulement pour le nouveau membre) |
 | `group_member_removed` | Membre retiré ou a quitté        | `groupId`, `member: { playerId, name, avatar, avatarUrl }`, `removedBy`, `removedAt` |
 | `group_role_changed`   | Rôle d'un membre modifié         | `groupId`, `member: { playerId, name, avatar, avatarUrl }`, `oldRole`, `newRole`, `changedBy`, `changedAt` |
-| `room_changed`         | Un ami a changé de room              | `playerId`, `roomId`, `previousRoomId` (`null` si `hideRoomFromPublicList`) |
-| `privacy_updated`      | Un ami a changé ses privacy settings | `playerId`, `privacy`                                         |
+| `room_changed`         | Un ami ou membre de groupe a changé de room | `playerId`, `roomId`, `previousRoomId` (`null` si `hideRoomFromPublicList`) |
+| `privacy_updated`      | Un ami ou membre de groupe a changé ses privacy settings | `playerId`, `privacy`                                         |
+
+**Note sur `friend_response` :** Quand l'action est `"accept"`, l'événement contient des informations supplémentaires pour les deux joueurs :
+- `requesterRoomId` : Room actuelle du demandeur (`null` si privée ou cachée)
+- `requesterIsOnline` : Statut en ligne du demandeur (basé sur le seuil de 6 minutes)
+- `responderRoomId` : Room actuelle du répondeur (`null` si privée ou cachée)
+- `responderIsOnline` : Statut en ligne du répondeur (basé sur le seuil de 6 minutes)
+
+Cela permet aux deux joueurs de voir immédiatement le statut et la room de leur nouvel ami sans avoir à refetch la liste d'amis.
+
+**Note sur `group_member_added` :** Quand un nouveau membre est ajouté ou rejoint un groupe, il reçoit une version enrichie de l'événement contenant un champ `conversation` avec :
+- `messages` : Les 50 derniers messages du groupe (avec `id`, `senderId`, `senderName`, `senderAvatarUrl`, `body`, `createdAt`, `readAt`)
+- `unreadCount` : Nombre de messages non lus pour ce membre
+
+Les membres existants du groupe reçoivent l'événement standard sans le champ `conversation`.
 
 ---
 
@@ -1151,10 +1308,11 @@ Classement par nombre de pièces.
 
 **Query params :**
 
-| Param  | Type   | Requis | Description                          |
-|--------|--------|--------|--------------------------------------|
-| limit  | number | Non    | Nombre de résultats (1-100, défaut: 50) |
-| offset | number | Non    | Décalage pour pagination (défaut: 0)    |
+| Param  | Type   | Requis | Description                                        |
+|--------|--------|--------|----------------------------------------------------|
+| query  | string | Non    | Recherche par nom ou ID (insensible à la casse)     |
+| limit  | number | Non    | Nombre de résultats (1-100, défaut: 50)             |
+| offset | number | Non    | Décalage pour pagination (défaut: 0)                |
 
 **Réponse (200) :**
 
@@ -1167,16 +1325,21 @@ Classement par nombre de pièces.
       "avatarUrl": "https://...",
       "avatar": [...],
       "lastEventAt": "...",
-      "coins": 50000,
-      "eggsHatched": 100
+      "rank": 1,
+      "total": 50000,
+      "rankChange": 3
     }
   ]
 }
 ```
 
 **Comportement serveur :**
+- `total` : Correspond à la valeur de la catégorie (coins pour `/coins`, eggs hatched pour `/eggs-hatched`)
 - Trié par coins décroissant
 - Si un joueur a masqué ses coins (`show_coins = false`), il apparaît comme `"anonymous"`
+- Le paramètre `query` filtre par nom ou ID avec `ILIKE`
+- `rank` : Position actuelle dans le classement
+- `rankChange` : Nombre de places gagnées (+) ou perdues (-) depuis le dernier snapshot journalier. `null` si pas encore de snapshot.
 
 ---
 
@@ -1198,14 +1361,18 @@ Rang d'un joueur dans le classement des pièces.
 {
   "rank": 5,
   "total": 1000,
+  "rankChange": 3,
   "row": {
     "playerId": "123",
     "playerName": "Nom",
-    "coins": 50000,
-    "eggsHatched": 100
+    "total": 50000
   }
 }
 ```
+
+**Comportement serveur :**
+- `total` : Correspond à la valeur de la catégorie (coins pour `/coins/rank`, eggs hatched pour `/eggs-hatched/rank`)
+- `rankChange` : Nombre de places gagnées (+) ou perdues (-) en 24h. `null` si pas de snapshot.
 
 ---
 
@@ -1217,10 +1384,11 @@ Classement par nombre d'œufs éclos.
 
 **Query params :** Identiques à `/leaderboard/coins`
 
-**Réponse (200) :** Même structure que `/leaderboard/coins`, trié par `eggsHatched` décroissant.
+**Réponse (200) :** Même structure que `/leaderboard/coins`, trié par eggs hatched décroissant. Le champ `total` correspond au nombre d'œufs éclos.
 
 **Comportement serveur :**
 - Si un joueur a masqué ses stats (`show_stats = false`), il apparaît comme `"anonymous"`
+- `rankChange` basé sur `eggs_rank_snapshot`
 
 ---
 

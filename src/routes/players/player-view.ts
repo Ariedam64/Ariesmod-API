@@ -216,8 +216,8 @@ export function registerPlayerViewRoute(app: Application): void {
     }
 
     // 4b) leaderboard ranks
-    let coinsRank: { rank: number; total: number } | null = null;
-    let eggsRank: { rank: number; total: number } | null = null;
+    let coinsRank: { rank: number; total: number; rankChange: number | null } | null = null;
+    let eggsRank: { rank: number; total: number; rankChange: number | null } | null = null;
     if (wantLeaderboard && (privacy.showCoins || privacy.showStats)) {
       try {
         if (privacy.showCoins) {
@@ -227,13 +227,14 @@ export function registerPlayerViewRoute(app: Application): void {
               select
                 ls.player_id,
                 ls.coins,
+                ls.coins_rank_snapshot_24h,
                 row_number() over (
                   order by ls.coins desc, p.created_at desc
                 ) as rank
               from public.leaderboard_stats ls
               join public.players p on p.id = ls.player_id
             )
-            select rank, coins
+            select rank, coins, coins_rank_snapshot_24h
             from ranked
             where player_id = $1
             limit 1
@@ -242,9 +243,14 @@ export function registerPlayerViewRoute(app: Application): void {
           );
           const row = rows[0];
           if (row) {
+            const currentRank = Number(row.rank ?? 0);
+            const rankChange = row.coins_rank_snapshot_24h != null
+              ? row.coins_rank_snapshot_24h - currentRank
+              : null;
             coinsRank = {
-              rank: Number(row.rank ?? 0),
+              rank: currentRank,
               total: Number(row.coins ?? 0),
+              rankChange,
             };
           }
         }
@@ -255,13 +261,14 @@ export function registerPlayerViewRoute(app: Application): void {
               select
                 ls.player_id,
                 ls.eggs_hatched,
+                ls.eggs_rank_snapshot_24h,
                 row_number() over (
                   order by ls.eggs_hatched desc, p.created_at desc
                 ) as rank
               from public.leaderboard_stats ls
               join public.players p on p.id = ls.player_id
             )
-            select rank, eggs_hatched
+            select rank, eggs_hatched, eggs_rank_snapshot_24h
             from ranked
             where player_id = $1
             limit 1
@@ -270,9 +277,14 @@ export function registerPlayerViewRoute(app: Application): void {
           );
           const row = rows[0];
           if (row) {
+            const currentRank = Number(row.rank ?? 0);
+            const rankChange = row.eggs_rank_snapshot_24h != null
+              ? row.eggs_rank_snapshot_24h - currentRank
+              : null;
             eggsRank = {
-              rank: Number(row.rank ?? 0),
+              rank: currentRank,
               total: Number(row.eggs_hatched ?? 0),
+              rankChange,
             };
           }
         }

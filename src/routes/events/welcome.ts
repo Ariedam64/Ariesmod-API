@@ -85,6 +85,7 @@ export type WelcomeData = {
         senderAvatarUrl: string | null;
         body: string;
         createdAt: string;
+        readAt: string | null;
       }>;
       unreadCount: number;
     }>;
@@ -109,6 +110,7 @@ export type WelcomeData = {
     avatarUrl: string | null;
     avatar: unknown;
     lastEventAt: string | null;
+    isOnline: boolean;
   }>;
   publicRooms: Array<{
     id: string;
@@ -116,6 +118,58 @@ export type WelcomeData = {
     userSlots: unknown;
     lastUpdatedAt: string | null;
   }>;
+  groupMembers: Array<{
+    playerId: string;
+    name: string;
+    avatarUrl: string | null;
+    avatar: unknown;
+    lastEventAt: string | null;
+    roomId: string | null;
+    isOnline: boolean;
+    groupIds: number[];
+  }>;
+  leaderboard: {
+    coins: {
+      top: Array<{
+        playerId: string;
+        playerName: string;
+        avatarUrl: string | null;
+        avatar: unknown;
+        rank: number;
+        total: number;
+        rankChange: number | null;
+      }>;
+      myRank: {
+        playerId: string;
+        playerName: string;
+        avatarUrl: string | null;
+        avatar: unknown;
+        rank: number;
+        total: number;
+        rankChange: number | null;
+      } | null;
+    };
+    eggsHatched: {
+      top: Array<{
+        playerId: string;
+        playerName: string;
+        avatarUrl: string | null;
+        avatar: unknown;
+        rank: number;
+        total: number;
+        rankChange: number | null;
+      }>;
+      myRank: {
+        playerId: string;
+        playerName: string;
+        avatarUrl: string | null;
+        avatar: unknown;
+        rank: number;
+        total: number;
+        rankChange: number | null;
+      } | null;
+    };
+  };
 };
 
 async function getMyProfile(playerId: string): Promise<WelcomeData["myProfile"]> {
@@ -327,6 +381,7 @@ async function getGroups(playerId: string): Promise<WelcomeData["groups"]> {
         from public.group_messages gmsg
         where gmsg.group_id = g.id
           and (gm.last_read_message_id is null or gmsg.id > gm.last_read_message_id)
+          and gmsg.sender_id != $1
       ) as unread_count
     from public.group_members gm
     join public.groups g on g.id = gm.group_id
@@ -463,13 +518,20 @@ async function getModPlayers(): Promise<WelcomeData["modPlayers"]> {
     [],
   );
 
-  return (rows ?? []).map((row) => ({
-    playerId: row.id,
-    playerName: row.name ?? row.id,
-    avatarUrl: row.avatar_url ?? null,
-    avatar: row.avatar ?? null,
-    lastEventAt: row.last_event_at ?? null,
-  }));
+  const now = Date.now();
+  return (rows ?? []).map((row) => {
+    const lastEventTs = row.last_event_at ? Date.parse(row.last_event_at) : null;
+    const isOnline = lastEventTs !== null && now - lastEventTs <= CONNECTED_TTL_MS;
+
+    return {
+      playerId: row.id,
+      playerName: row.name ?? row.id,
+      avatarUrl: row.avatar_url ?? null,
+      avatar: row.avatar ?? null,
+      lastEventAt: row.last_event_at ?? null,
+      isOnline,
+    };
+  });
 }
 
 async function getConversations(
@@ -581,6 +643,7 @@ async function getGroupConversations(
         from public.group_messages gmsg
         where gmsg.group_id = g.id
           and (gm.last_read_message_id is null or gmsg.id > gm.last_read_message_id)
+          and gmsg.sender_id != $1
       ) as unread_count,
       coalesce(
         (
@@ -592,7 +655,30 @@ async function getGroupConversations(
               coalesce(p_sender.name, gmsg.sender_id) as "senderName",
               p_sender.avatar_url as "senderAvatarUrl",
               gmsg.body,
-              gmsg.created_at as "createdAt"
+              gmsg.created_at as "createdAt",
+              case
+                -- Message incoming (des autres) : readAt basé sur MON last_read_message_id
+                when gmsg.sender_id != $1 then
+                  case
+                    when gm.last_read_message_id is not null and gmsg.id <= gm.last_read_message_id
+                    then gmsg.created_at
+                    else null
+                  end
+                -- Message outgoing (le mien) : readAt basé sur le last_read_message_id des AUTRES membres
+                else
+                  case
+                    when exists (
+                      select 1
+                      from public.group_members gm2
+                      where gm2.group_id = g.id
+                        and gm2.player_id != $1
+                        and gm2.last_read_message_id is not null
+                        and gm2.last_read_message_id >= gmsg.id
+                    )
+                    then gmsg.created_at
+                    else null
+                  end
+              end as "readAt"
             from public.group_messages gmsg
             left join public.players p_sender on p_sender.id = gmsg.sender_id
             where gmsg.group_id = g.id
@@ -609,12 +695,78 @@ async function getGroupConversations(
     [playerId],
   );
 
-  return (rows ?? []).map((row) => ({
-    groupId: row.group_id,
-    groupName: row.group_name,
-    messages: Array.isArray(row.messages) ? row.messages : [],
-    unreadCount: Number(row.unread_count ?? "0"),
-  }));
+  return (rows ?? [])
+    .map((row) => ({
+      groupId: row.group_id,
+      groupName: row.group_name,
+      messages: Array.isArray(row.messages) ? row.messages : [],
+      unreadCount: Number(row.unread_count ?? "0"),
+    }))
+    .filter((conv) => conv.messages.length > 0); // Only include groups with messages
+}
+
+async function getGroupMembers(playerId: string): Promise<WelcomeData["groupMembers"]> {
+  const { rows } = await query<{
+    member_id: string;
+    member_name: string | null;
+    avatar_url: string | null;
+    avatar: unknown;
+    last_event_at: string | null;
+    room_id: string | null;
+    is_private: boolean | null;
+    hide_room_from_public_list: boolean | null;
+    group_ids: string;
+  }>(
+    `
+    select
+      gm.player_id as member_id,
+      p.name as member_name,
+      p.avatar_url,
+      p.avatar,
+      p.last_event_at,
+      rp.room_id,
+      r.is_private,
+      pp.hide_room_from_public_list,
+      string_agg(gm.group_id::text, ',') as group_ids
+    from public.group_members gm
+    join public.players p
+      on p.id = gm.player_id
+    left join public.room_players rp
+      on rp.player_id = p.id
+      and rp.left_at is null
+    left join public.rooms r
+      on r.id = rp.room_id
+    left join public.player_privacy pp
+      on pp.player_id = p.id
+    where gm.group_id in (
+      select group_id
+      from public.group_members
+      where player_id = $1
+    )
+      and gm.player_id != $1
+    group by gm.player_id, p.name, p.avatar_url, p.avatar, p.last_event_at, rp.room_id, r.is_private, pp.hide_room_from_public_list
+    `,
+    [playerId],
+  );
+
+  const now = Date.now();
+  return (rows ?? []).map((row) => {
+    const lastEventTs = row.last_event_at ? Date.parse(row.last_event_at) : null;
+    const isOnline = lastEventTs !== null && now - lastEventTs <= CONNECTED_TTL_MS;
+    const roomHidden = row.is_private || row.hide_room_from_public_list === true;
+    const groupIds = row.group_ids ? row.group_ids.split(',').map(Number) : [];
+
+    return {
+      playerId: row.member_id,
+      name: row.member_name ?? row.member_id,
+      avatarUrl: row.avatar_url ?? null,
+      avatar: row.avatar ?? null,
+      lastEventAt: row.last_event_at ?? null,
+      roomId: row.room_id && !roomHidden ? row.room_id : null,
+      isOnline,
+      groupIds,
+    };
+  });
 }
 
 const ROOM_TTL_MS = 6 * 60 * 1000;
@@ -650,10 +802,183 @@ async function getPublicRooms(): Promise<WelcomeData["publicRooms"]> {
   }));
 }
 
+async function getLeaderboard(playerId: string): Promise<WelcomeData["leaderboard"]> {
+  type CoinsRow = {
+    player_id: string;
+    name: string | null;
+    avatar_url: string | null;
+    avatar: unknown;
+    coins: string | number;
+    show_coins: boolean | null;
+    rank: string | number;
+    coins_rank_snapshot_24h: number | null;
+  };
+
+  type EggsRow = {
+    player_id: string;
+    name: string | null;
+    avatar_url: string | null;
+    avatar: unknown;
+    eggs_hatched: string | number;
+    show_stats: boolean | null;
+    rank: string | number;
+    eggs_rank_snapshot_24h: number | null;
+  };
+
+  // Get top 15 for coins
+  const { rows: coinsTop } = await query<CoinsRow>(
+    `
+    select
+      ls.player_id,
+      p.name,
+      p.avatar_url,
+      p.avatar,
+      ls.coins,
+      pr.show_coins,
+      ls.coins_rank_snapshot_24h,
+      row_number() over (order by ls.coins desc, p.created_at desc) as rank
+    from public.leaderboard_stats ls
+    join public.players p on p.id = ls.player_id
+    left join public.player_privacy pr on pr.player_id = p.id
+    order by ls.coins desc, p.created_at desc
+    limit 15
+    `,
+    [],
+  );
+
+  // Get my rank for coins
+  const { rows: coinsMyRank } = await query<CoinsRow>(
+    `
+    with ranked as (
+      select
+        ls.player_id,
+        p.name,
+        p.avatar_url,
+        p.avatar,
+        ls.coins,
+        pr.show_coins,
+        ls.coins_rank_snapshot_24h,
+        row_number() over (order by ls.coins desc, p.created_at desc) as rank
+      from public.leaderboard_stats ls
+      join public.players p on p.id = ls.player_id
+      left join public.player_privacy pr on pr.player_id = p.id
+    )
+    select * from ranked
+    where player_id = $1
+    limit 1
+    `,
+    [playerId],
+  );
+
+  // Get top 15 for eggs hatched
+  const { rows: eggsTop } = await query<EggsRow>(
+    `
+    select
+      ls.player_id,
+      p.name,
+      p.avatar_url,
+      p.avatar,
+      ls.eggs_hatched,
+      pr.show_stats,
+      ls.eggs_rank_snapshot_24h,
+      row_number() over (order by ls.eggs_hatched desc, p.created_at desc) as rank
+    from public.leaderboard_stats ls
+    join public.players p on p.id = ls.player_id
+    left join public.player_privacy pr on pr.player_id = p.id
+    order by ls.eggs_hatched desc, p.created_at desc
+    limit 15
+    `,
+    [],
+  );
+
+  // Get my rank for eggs hatched
+  const { rows: eggsMyRank } = await query<EggsRow>(
+    `
+    with ranked as (
+      select
+        ls.player_id,
+        p.name,
+        p.avatar_url,
+        p.avatar,
+        ls.eggs_hatched,
+        pr.show_stats,
+        ls.eggs_rank_snapshot_24h,
+        row_number() over (order by ls.eggs_hatched desc, p.created_at desc) as rank
+      from public.leaderboard_stats ls
+      join public.players p on p.id = ls.player_id
+      left join public.player_privacy pr on pr.player_id = p.id
+    )
+    select * from ranked
+    where player_id = $1
+    limit 1
+    `,
+    [playerId],
+  );
+
+  function coinsRankChange(row: CoinsRow): number | null {
+    const current = Number(row.rank ?? 0);
+    return row.coins_rank_snapshot_24h != null ? row.coins_rank_snapshot_24h - current : null;
+  }
+
+  function eggsRankChange(row: EggsRow): number | null {
+    const current = Number(row.rank ?? 0);
+    return row.eggs_rank_snapshot_24h != null ? row.eggs_rank_snapshot_24h - current : null;
+  }
+
+  return {
+    coins: {
+      top: (coinsTop ?? []).map((row) => {
+        const anonymized = row.show_coins === false;
+        return {
+          playerId: anonymized ? "null" : row.player_id,
+          playerName: anonymized ? "anonymous" : (row.name ?? row.player_id),
+          avatarUrl: anonymized ? null : (row.avatar_url ?? null),
+          avatar: anonymized ? null : (row.avatar ?? null),
+          rank: Number(row.rank ?? 0),
+          total: Number(row.coins ?? 0),
+          rankChange: coinsRankChange(row),
+        };
+      }),
+      myRank: coinsMyRank[0] ? {
+        playerId: coinsMyRank[0].player_id,
+        playerName: coinsMyRank[0].name ?? coinsMyRank[0].player_id,
+        avatarUrl: coinsMyRank[0].avatar_url ?? null,
+        avatar: coinsMyRank[0].avatar ?? null,
+        rank: Number(coinsMyRank[0].rank ?? 0),
+        total: Number(coinsMyRank[0].coins ?? 0),
+        rankChange: coinsRankChange(coinsMyRank[0]),
+      } : null,
+    },
+    eggsHatched: {
+      top: (eggsTop ?? []).map((row) => {
+        const anonymized = row.show_stats === false;
+        return {
+          playerId: anonymized ? "null" : row.player_id,
+          playerName: anonymized ? "anonymous" : (row.name ?? row.player_id),
+          avatarUrl: anonymized ? null : (row.avatar_url ?? null),
+          avatar: anonymized ? null : (row.avatar ?? null),
+          rank: Number(row.rank ?? 0),
+          total: Number(row.eggs_hatched ?? 0),
+          rankChange: eggsRankChange(row),
+        };
+      }),
+      myRank: eggsMyRank[0] ? {
+        playerId: eggsMyRank[0].player_id,
+        playerName: eggsMyRank[0].name ?? eggsMyRank[0].player_id,
+        avatarUrl: eggsMyRank[0].avatar_url ?? null,
+        avatar: eggsMyRank[0].avatar ?? null,
+        rank: Number(eggsMyRank[0].rank ?? 0),
+        total: Number(eggsMyRank[0].eggs_hatched ?? 0),
+        rankChange: eggsRankChange(eggsMyRank[0]),
+      } : null,
+    },
+  };
+}
+
 export async function buildWelcomeData(
   playerId: string,
 ): Promise<WelcomeData> {
-  const [myProfile, friends, friendRequests, groups, publicGroups, friendConversations, groupConversations, modPlayers, publicRooms] =
+  const [myProfile, friends, friendRequests, groups, publicGroups, friendConversations, groupConversations, modPlayers, publicRooms, groupMembers, leaderboard] =
     await Promise.all([
       getMyProfile(playerId),
       getFriends(playerId),
@@ -664,6 +989,8 @@ export async function buildWelcomeData(
       getGroupConversations(playerId),
       getModPlayers(),
       getPublicRooms(),
+      getGroupMembers(playerId),
+      getLeaderboard(playerId),
     ]);
 
   return {
@@ -678,5 +1005,7 @@ export async function buildWelcomeData(
     },
     modPlayers,
     publicRooms,
+    groupMembers,
+    leaderboard,
   };
 }

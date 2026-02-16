@@ -30,6 +30,19 @@ export function registerLeaderboardCoinsRoute(app: Application): void {
     }
 
     const { limit, offset } = parseLimitOffset(req);
+    const rawQuery = String(req.query.query ?? "").trim();
+
+    const params: any[] = [];
+    let idx = 1;
+    let where = "";
+
+    if (rawQuery.length > 0) {
+      const likeQuery = `%${rawQuery}%`;
+      params.push(likeQuery, likeQuery);
+      where = `where (name ilike $${idx++} or player_id ilike $${idx++})`;
+    }
+
+    params.push(limit, offset);
 
     try {
         const { rows } = await query<{
@@ -38,49 +51,63 @@ export function registerLeaderboardCoinsRoute(app: Application): void {
           avatar_url: string | null;
           avatar: unknown;
           coins: string | number;
-          eggs_hatched: string | number;
           last_event_at: string | null;
           show_coins: boolean | null;
+          rank: string | number;
+          coins_rank_snapshot_24h: number | null;
         }>(
           `
-          select
-            ls.player_id,
-            p.name,
-            p.avatar_url,
-            p.avatar,
-            ls.coins,
-            ls.eggs_hatched,
-            p.last_event_at,
-            pr.show_coins
-          from public.leaderboard_stats ls
-          join public.players p on p.id = ls.player_id
-          left join public.player_privacy pr
-            on pr.player_id = p.id
-          order by ls.coins desc, p.created_at desc
-          limit $1 offset $2
+          with ranked as (
+            select
+              ls.player_id,
+              p.name,
+              p.avatar_url,
+              p.avatar,
+              ls.coins,
+              p.last_event_at,
+              pr.show_coins,
+              ls.coins_rank_snapshot_24h,
+              row_number() over (order by ls.coins desc, p.created_at desc) as rank
+            from public.leaderboard_stats ls
+            join public.players p on p.id = ls.player_id
+            left join public.player_privacy pr
+              on pr.player_id = p.id
+          )
+          select * from ranked
+          ${where}
+          order by rank
+          limit $${idx++} offset $${idx++}
           `,
-          [limit, offset],
+          params,
         );
 
-      const rowsOut = (rows ?? []).map((row) => ({
-        ...(row.show_coins === false
-          ? {
-              playerId: "null",
-              playerName: "anonymous",
-              avatarUrl: null,
-              avatar: null,
-              lastEventAt: null,
-            }
-          : {
-              playerId: row.player_id,
-              playerName: row.name ?? row.player_id,
-              avatarUrl: row.avatar_url ?? null,
-              avatar: row.avatar ?? null,
-              lastEventAt: row.last_event_at ?? null,
-            }),
-        coins: Number(row.coins ?? 0),
-        eggsHatched: Number(row.eggs_hatched ?? 0),
-      }));
+      const rowsOut = (rows ?? []).map((row) => {
+        const currentRank = Number(row.rank ?? 0);
+        const rankChange = row.coins_rank_snapshot_24h != null
+          ? row.coins_rank_snapshot_24h - currentRank
+          : null;
+
+        return {
+          ...(row.show_coins === false
+            ? {
+                playerId: "null",
+                playerName: "anonymous",
+                avatarUrl: null,
+                avatar: null,
+                lastEventAt: null,
+              }
+            : {
+                playerId: row.player_id,
+                playerName: row.name ?? row.player_id,
+                avatarUrl: row.avatar_url ?? null,
+                avatar: row.avatar ?? null,
+                lastEventAt: row.last_event_at ?? null,
+              }),
+          rank: currentRank,
+          total: Number(row.coins ?? 0),
+          rankChange,
+        };
+      });
 
       return res.status(200).json({ rows: rowsOut });
     } catch (err) {
