@@ -1,16 +1,14 @@
 /**
  * Leaderboard Snapshot Update Script
  *
- * Runs every 10 minutes to:
- * 1. Save current ranks to history table
- * 2. Update rankChange (based on oldest available snapshot, max 24h)
- * 3. Clean up snapshots older than 24h
+ * Runs every 30 minutes to:
+ * 1. Recalculate and store current ranks
+ * 2. Reset snapshot reference for players whose snapshot is older than 24h
  *
- * This ensures rankChange shows progression over time:
- * - First 3h: compares with 3h ago
- * - After 24h: compares with 24h ago (oldest available)
+ * No history table needed — snapshot columns in leaderboard_stats are
+ * refreshed in-place when they expire (>24h old).
  *
- * Run via cron: every 10 minutes
+ * Run via cron: every 30 minutes
  */
 
 import { query } from "../db";
@@ -20,57 +18,52 @@ async function updateSnapshots() {
   console.log(`[${new Date().toISOString()}] Starting leaderboard snapshot update...`);
 
   try {
-    // Step 1: Insert current ranks into history
-    console.log(`[${new Date().toISOString()}]   → Saving current ranks to history...`);
-    const insertResult = await query(
+    // Step 1: Calculate and store ranks in leaderboard_stats
+    console.log(`[${new Date().toISOString()}]   → Calculating and storing ranks...`);
+    await query(
       `
-      INSERT INTO public.leaderboard_snapshots_history (player_id, coins_rank, eggs_rank, snapshot_at)
-      SELECT
-        player_id,
-        ROW_NUMBER() OVER (ORDER BY coins DESC, (SELECT created_at FROM players WHERE id = leaderboard_stats.player_id) DESC) as coins_rank,
-        ROW_NUMBER() OVER (ORDER BY eggs_hatched DESC, (SELECT created_at FROM players WHERE id = leaderboard_stats.player_id) DESC) as eggs_rank,
-        NOW()
-      FROM public.leaderboard_stats
-      `,
-      [],
-    );
-    console.log(`[${new Date().toISOString()}]   ✓ Inserted ${insertResult.rowCount ?? 0} snapshots`);
-
-    // Step 2: Update leaderboard_stats with oldest snapshot ranks (for rankChange calculation)
-    console.log(`[${new Date().toISOString()}]   → Updating rankChange references...`);
-    const updateResult = await query(
-      `
+      WITH coins_ranked AS (
+        SELECT
+          ls.player_id,
+          ROW_NUMBER() OVER (ORDER BY ls.coins DESC, p.created_at DESC) as rank
+        FROM public.leaderboard_stats ls
+        JOIN public.players p ON p.id = ls.player_id
+      ),
+      eggs_ranked AS (
+        SELECT
+          ls.player_id,
+          ROW_NUMBER() OVER (ORDER BY ls.eggs_hatched DESC, p.created_at DESC) as rank
+        FROM public.leaderboard_stats ls
+        JOIN public.players p ON p.id = ls.player_id
+      )
       UPDATE public.leaderboard_stats ls
       SET
-        coins_rank_snapshot_24h = oldest.coins_rank,
-        eggs_rank_snapshot_24h = oldest.eggs_rank,
-        snapshot_24h_at = oldest.snapshot_at
-      FROM (
-        SELECT DISTINCT ON (player_id)
-          player_id,
-          coins_rank,
-          eggs_rank,
-          snapshot_at
-        FROM public.leaderboard_snapshots_history
-        WHERE snapshot_at >= NOW() - INTERVAL '24 hours'
-        ORDER BY player_id, snapshot_at ASC
-      ) oldest
-      WHERE ls.player_id = oldest.player_id
+        coins_rank = cr.rank,
+        eggs_rank = er.rank
+      FROM coins_ranked cr
+      JOIN eggs_ranked er ON er.player_id = cr.player_id
+      WHERE ls.player_id = cr.player_id
       `,
       [],
     );
-    console.log(`[${new Date().toISOString()}]   ✓ Updated ${updateResult.rowCount ?? 0} players`);
+    console.log(`[${new Date().toISOString()}]   ✓ Ranks calculated and stored`);
 
-    // Step 3: Delete snapshots older than 24h
-    console.log(`[${new Date().toISOString()}]   → Cleaning up old snapshots...`);
-    const deleteResult = await query(
+    // Step 2: Reset snapshot for players whose reference is expired or missing
+    // When expired, current rank becomes the new reference point
+    console.log(`[${new Date().toISOString()}]   → Resetting expired snapshots...`);
+    const updateResult = await query(
       `
-      DELETE FROM public.leaderboard_snapshots_history
-      WHERE snapshot_at < NOW() - INTERVAL '24 hours'
+      UPDATE public.leaderboard_stats
+      SET
+        coins_rank_snapshot_24h = coins_rank,
+        eggs_rank_snapshot_24h = eggs_rank,
+        snapshot_24h_at = NOW()
+      WHERE snapshot_24h_at IS NULL
+        OR snapshot_24h_at < NOW() - INTERVAL '24 hours'
       `,
       [],
     );
-    console.log(`[${new Date().toISOString()}]   ✓ Deleted ${deleteResult.rowCount ?? 0} old snapshots`);
+    console.log(`[${new Date().toISOString()}]   ✓ Reset ${updateResult.rowCount ?? 0} expired snapshots`);
 
     const duration = Date.now() - startTime;
     console.log(`[${new Date().toISOString()}] ✓ Snapshot update completed in ${duration}ms`);

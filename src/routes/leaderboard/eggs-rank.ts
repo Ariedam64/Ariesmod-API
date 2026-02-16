@@ -39,28 +39,22 @@ export function registerLeaderboardEggsRankRoute(app: Application): void {
           eggs_rank_snapshot_24h: number | null;
         }>(
           `
-          with ranked as (
-            select
-              ls.player_id,
-              p.name,
-              p.avatar_url,
-              p.avatar,
-              ls.eggs_hatched,
-              p.last_event_at,
-              pr.show_stats,
-              ls.eggs_rank_snapshot_24h,
-              row_number() over (
-                order by ls.eggs_hatched desc, p.created_at desc
-              ) as rank,
-              count(*) over () as total
-            from public.leaderboard_stats ls
-            join public.players p on p.id = ls.player_id
-            left join public.player_privacy pr
-              on pr.player_id = p.id
-          )
-          select *
-          from ranked
-          where player_id = $1
+          select
+            ls.player_id,
+            p.name,
+            p.avatar_url,
+            p.avatar,
+            ls.eggs_hatched,
+            p.last_event_at,
+            pr.show_stats,
+            ls.eggs_rank_snapshot_24h,
+            ls.eggs_rank as rank,
+            (select count(*) from public.leaderboard_stats) as total
+          from public.leaderboard_stats ls
+          join public.players p on p.id = ls.player_id
+          left join public.player_privacy pr
+            on pr.player_id = p.id
+          where ls.player_id = $1
           limit 1
           `,
           [playerId],

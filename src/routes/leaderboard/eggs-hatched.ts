@@ -33,6 +33,7 @@ export function registerLeaderboardEggsRoute(app: Application): void {
 
       const { limit, offset } = parseLimitOffset(req);
       const rawQuery = String(req.query.query ?? "").trim();
+      const myPlayerId = req.query.myPlayerId ? String(req.query.myPlayerId).trim() : null;
 
       const params: any[] = [];
       let idx = 1;
@@ -59,25 +60,22 @@ export function registerLeaderboardEggsRoute(app: Application): void {
           eggs_rank_snapshot_24h: number | null;
         }>(
           `
-          with ranked as (
-            select
-              ls.player_id,
-              p.name,
-              p.avatar_url,
-              p.avatar,
-              ls.eggs_hatched,
-              p.last_event_at,
-              pr.show_stats,
-              ls.eggs_rank_snapshot_24h,
-              row_number() over (order by ls.eggs_hatched desc, p.created_at desc) as rank
-            from public.leaderboard_stats ls
-            join public.players p on p.id = ls.player_id
-            left join public.player_privacy pr
-              on pr.player_id = p.id
-          )
-          select * from ranked
+          select
+            ls.player_id,
+            p.name,
+            p.avatar_url,
+            p.avatar,
+            ls.eggs_hatched,
+            p.last_event_at,
+            pr.show_stats,
+            ls.eggs_rank_snapshot_24h,
+            ls.eggs_rank as rank
+          from public.leaderboard_stats ls
+          join public.players p on p.id = ls.player_id
+          left join public.player_privacy pr
+            on pr.player_id = p.id
           ${where}
-          order by rank
+          order by ls.eggs_rank
           limit $${idx++} offset $${idx++}
           `,
           params,
@@ -111,7 +109,71 @@ export function registerLeaderboardEggsRoute(app: Application): void {
           };
         });
 
-        return res.status(200).json({ rows: rowsOut });
+        // Fetch myRank if requested
+        let myRank = null;
+        if (myPlayerId) {
+          const { rows: myRows } = await query<{
+            player_id: string;
+            name: string | null;
+            avatar_url: string | null;
+            avatar: unknown;
+            eggs_hatched: string | number;
+            last_event_at: string | null;
+            show_stats: boolean | null;
+            rank: string | number;
+            eggs_rank_snapshot_24h: number | null;
+          }>(
+            `
+            select
+              ls.player_id,
+              p.name,
+              p.avatar_url,
+              p.avatar,
+              ls.eggs_hatched,
+              p.last_event_at,
+              pr.show_stats,
+              ls.eggs_rank_snapshot_24h,
+              ls.eggs_rank as rank
+            from public.leaderboard_stats ls
+            join public.players p on p.id = ls.player_id
+            left join public.player_privacy pr
+              on pr.player_id = p.id
+            where ls.player_id = $1
+            `,
+            [myPlayerId],
+          );
+
+          if (myRows && myRows.length > 0) {
+            const row = myRows[0];
+            const currentRank = Number(row.rank ?? 0);
+            const rankChange = row.eggs_rank_snapshot_24h != null
+              ? row.eggs_rank_snapshot_24h - currentRank
+              : null;
+
+            myRank = {
+              ...(row.show_stats === false
+                ? {
+                    playerId: "null",
+                    playerName: "anonymous",
+                    avatarUrl: null,
+                    avatar: null,
+                    lastEventAt: null,
+                  }
+                : {
+                    playerId: row.player_id,
+                    playerName: row.name ?? row.player_id,
+                    avatarUrl: row.avatar_url ?? null,
+                    avatar: row.avatar ?? null,
+                    lastEventAt: row.last_event_at ?? null,
+                  }),
+              rank: currentRank,
+              total: Number(row.eggs_hatched ?? 0),
+              rankChange,
+            };
+          }
+        }
+
+        return res.status(200).json({ rows: rowsOut, myRank });
       } catch (err) {
         console.error("leaderboard eggs db error:", err);
         return res.status(500).send("DB error");

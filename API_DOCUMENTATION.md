@@ -1308,11 +1308,12 @@ Classement par nombre de pièces.
 
 **Query params :**
 
-| Param  | Type   | Requis | Description                                        |
-|--------|--------|--------|----------------------------------------------------|
-| query  | string | Non    | Recherche par nom ou ID (insensible à la casse)     |
-| limit  | number | Non    | Nombre de résultats (1-100, défaut: 50)             |
-| offset | number | Non    | Décalage pour pagination (défaut: 0)                |
+| Param      | Type   | Requis | Description                                        |
+|------------|--------|--------|----------------------------------------------------|
+| query      | string | Non    | Recherche par nom ou ID (insensible à la casse)     |
+| limit      | number | Non    | Nombre de résultats (1-100, défaut: 50)             |
+| offset     | number | Non    | Décalage pour pagination (défaut: 0)                |
+| myPlayerId | string | Non    | ID du joueur pour inclure son rang dans la réponse (même s'il n'est pas dans les résultats) |
 
 **Réponse (200) :**
 
@@ -1329,7 +1330,17 @@ Classement par nombre de pièces.
       "total": 50000,
       "rankChange": 3
     }
-  ]
+  ],
+  "myRank": {
+    "playerId": "456",
+    "playerName": "Mon nom",
+    "avatarUrl": "https://...",
+    "avatar": [...],
+    "lastEventAt": "...",
+    "rank": 28,
+    "total": 12000,
+    "rankChange": -2
+  }
 }
 ```
 
@@ -1340,6 +1351,7 @@ Classement par nombre de pièces.
 - Le paramètre `query` filtre par nom ou ID avec `ILIKE`
 - `rank` : Position actuelle dans le classement
 - `rankChange` : Nombre de places gagnées (+) ou perdues (-) depuis le dernier snapshot journalier. `null` si pas encore de snapshot.
+- **`myRank`** : Si le paramètre `myPlayerId` est fourni, le champ `myRank` contient les informations du joueur spécifié (rang, total, rankChange, etc.), même s'il n'apparaît pas dans `rows`. Permet d'afficher "Top 15 + mon rang" dans les interfaces. Retourne `null` si le joueur n'existe pas.
 
 ---
 
@@ -1382,13 +1394,14 @@ Classement par nombre d'œufs éclos.
 
 **Auth requise :** Non
 
-**Query params :** Identiques à `/leaderboard/coins`
+**Query params :** Identiques à `/leaderboard/coins` (incluant `myPlayerId`)
 
-**Réponse (200) :** Même structure que `/leaderboard/coins`, trié par eggs hatched décroissant. Le champ `total` correspond au nombre d'œufs éclos.
+**Réponse (200) :** Même structure que `/leaderboard/coins`, trié par eggs hatched décroissant. Le champ `total` correspond au nombre d'œufs éclos. Inclut également `myRank` si `myPlayerId` est fourni.
 
 **Comportement serveur :**
 - Si un joueur a masqué ses stats (`show_stats = false`), il apparaît comme `"anonymous"`
 - `rankChange` basé sur `eggs_rank_snapshot`
+- **`myRank`** : Même fonctionnement que pour `/leaderboard/coins`
 
 ---
 

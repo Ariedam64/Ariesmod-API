@@ -37,28 +37,22 @@ export function registerLeaderboardCoinsRankRoute(app: Application): void {
         coins_rank_snapshot_24h: number | null;
       }>(
         `
-        with ranked as (
-          select
-            ls.player_id,
-            p.name,
-            p.avatar_url,
-            p.avatar,
-            ls.coins,
-            p.last_event_at,
-            pr.show_coins,
-            ls.coins_rank_snapshot_24h,
-            row_number() over (
-              order by ls.coins desc, p.created_at desc
-            ) as rank,
-            count(*) over () as total
-          from public.leaderboard_stats ls
-          join public.players p on p.id = ls.player_id
-          left join public.player_privacy pr
-            on pr.player_id = p.id
-        )
-        select *
-        from ranked
-        where player_id = $1
+        select
+          ls.player_id,
+          p.name,
+          p.avatar_url,
+          p.avatar,
+          ls.coins,
+          p.last_event_at,
+          pr.show_coins,
+          ls.coins_rank_snapshot_24h,
+          ls.coins_rank as rank,
+          (select count(*) from public.leaderboard_stats) as total
+        from public.leaderboard_stats ls
+        join public.players p on p.id = ls.player_id
+        left join public.player_privacy pr
+          on pr.player_id = p.id
+        where ls.player_id = $1
         limit 1
         `,
         [playerId],

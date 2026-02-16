@@ -11,6 +11,8 @@ if (!connectionString) {
 
 export const pool = new Pool({
   connectionString,
+  max: 15,
+  idleTimeoutMillis: 30000,
 });
 
 export async function query<T = any>(text: string, params?: any[]): Promise<{ rows: T[]; rowCount: number | null }> {

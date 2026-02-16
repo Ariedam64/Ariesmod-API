@@ -1,5 +1,6 @@
 import { query } from "../../db";
 import { CONNECTED_TTL_MS } from "../messages/common";
+import { getCached, setCache } from "../../lib/cache";
 
 export type WelcomeData = {
   myProfile: {
@@ -496,6 +497,9 @@ async function getPublicGroups(playerId: string): Promise<WelcomeData["publicGro
 }
 
 async function getModPlayers(): Promise<WelcomeData["modPlayers"]> {
+  const cached = getCached<WelcomeData["modPlayers"]>("modPlayers");
+  if (cached) return cached;
+
   const { rows } = await query<{
     id: string;
     name: string | null;
@@ -519,7 +523,7 @@ async function getModPlayers(): Promise<WelcomeData["modPlayers"]> {
   );
 
   const now = Date.now();
-  return (rows ?? []).map((row) => {
+  const result = (rows ?? []).map((row) => {
     const lastEventTs = row.last_event_at ? Date.parse(row.last_event_at) : null;
     const isOnline = lastEventTs !== null && now - lastEventTs <= CONNECTED_TTL_MS;
 
@@ -532,6 +536,9 @@ async function getModPlayers(): Promise<WelcomeData["modPlayers"]> {
       isOnline,
     };
   });
+
+  setCache("modPlayers", result, 30_000);
+  return result;
 }
 
 async function getConversations(
@@ -772,6 +779,9 @@ async function getGroupMembers(playerId: string): Promise<WelcomeData["groupMemb
 const ROOM_TTL_MS = 6 * 60 * 1000;
 
 async function getPublicRooms(): Promise<WelcomeData["publicRooms"]> {
+  const cached = getCached<WelcomeData["publicRooms"]>("publicRooms");
+  if (cached) return cached;
+
   const cutoff = new Date(Date.now() - ROOM_TTL_MS).toISOString();
 
   const { rows } = await query<{
@@ -794,183 +804,109 @@ async function getPublicRooms(): Promise<WelcomeData["publicRooms"]> {
     [cutoff],
   );
 
-  return (rows ?? []).map((row) => ({
+  const result = (rows ?? []).map((row) => ({
     id: row.id,
     playersCount: row.players_count,
     userSlots: row.user_slots ?? null,
     lastUpdatedAt: row.last_updated_at ?? null,
   }));
+
+  setCache("publicRooms", result, 30_000);
+  return result;
+}
+
+type LeaderboardRow = {
+  player_id: string;
+  name: string | null;
+  avatar_url: string | null;
+  avatar: unknown;
+  coins: string | number;
+  eggs_hatched: string | number;
+  coins_rank: string | number;
+  eggs_rank: string | number;
+  coins_rank_snapshot_24h: number | null;
+  eggs_rank_snapshot_24h: number | null;
+  show_coins: boolean | null;
+  show_stats: boolean | null;
+};
+
+const LEADERBOARD_SQL = `
+  select
+    ls.player_id,
+    p.name,
+    p.avatar_url,
+    p.avatar,
+    ls.coins,
+    ls.eggs_hatched,
+    pr.show_coins,
+    pr.show_stats,
+    ls.coins_rank_snapshot_24h,
+    ls.eggs_rank_snapshot_24h,
+    ls.coins_rank,
+    ls.eggs_rank
+  from public.leaderboard_stats ls
+  join public.players p on p.id = ls.player_id
+  left join public.player_privacy pr on pr.player_id = p.id
+`;
+
+async function getLeaderboardTops(): Promise<{ coinsTop: LeaderboardRow[]; eggsTop: LeaderboardRow[] }> {
+  const cached = getCached<{ coinsTop: LeaderboardRow[]; eggsTop: LeaderboardRow[] }>("leaderboard_tops");
+  if (cached) return cached;
+
+  const [coinsResult, eggsResult] = await Promise.all([
+    query<LeaderboardRow>(`${LEADERBOARD_SQL} order by ls.coins_rank limit 15`),
+    query<LeaderboardRow>(`${LEADERBOARD_SQL} order by ls.eggs_rank limit 15`),
+  ]);
+
+  const data = { coinsTop: coinsResult.rows ?? [], eggsTop: eggsResult.rows ?? [] };
+  setCache("leaderboard_tops", data, 30_000);
+  return data;
 }
 
 async function getLeaderboard(playerId: string): Promise<WelcomeData["leaderboard"]> {
-  type CoinsRow = {
-    player_id: string;
-    name: string | null;
-    avatar_url: string | null;
-    avatar: unknown;
-    coins: string | number;
-    show_coins: boolean | null;
-    rank: string | number;
-    coins_rank_snapshot_24h: number | null;
-  };
+  const [tops, myRankResult] = await Promise.all([
+    getLeaderboardTops(),
+    query<LeaderboardRow>(`${LEADERBOARD_SQL} where ls.player_id = $1 limit 1`, [playerId]),
+  ]);
 
-  type EggsRow = {
-    player_id: string;
-    name: string | null;
-    avatar_url: string | null;
-    avatar: unknown;
-    eggs_hatched: string | number;
-    show_stats: boolean | null;
-    rank: string | number;
-    eggs_rank_snapshot_24h: number | null;
-  };
+  const myRow = myRankResult.rows?.[0] ?? null;
 
-  // Get top 15 for coins
-  const { rows: coinsTop } = await query<CoinsRow>(
-    `
-    select
-      ls.player_id,
-      p.name,
-      p.avatar_url,
-      p.avatar,
-      ls.coins,
-      pr.show_coins,
-      ls.coins_rank_snapshot_24h,
-      row_number() over (order by ls.coins desc, p.created_at desc) as rank
-    from public.leaderboard_stats ls
-    join public.players p on p.id = ls.player_id
-    left join public.player_privacy pr on pr.player_id = p.id
-    order by ls.coins desc, p.created_at desc
-    limit 15
-    `,
-    [],
-  );
-
-  // Get my rank for coins
-  const { rows: coinsMyRank } = await query<CoinsRow>(
-    `
-    with ranked as (
-      select
-        ls.player_id,
-        p.name,
-        p.avatar_url,
-        p.avatar,
-        ls.coins,
-        pr.show_coins,
-        ls.coins_rank_snapshot_24h,
-        row_number() over (order by ls.coins desc, p.created_at desc) as rank
-      from public.leaderboard_stats ls
-      join public.players p on p.id = ls.player_id
-      left join public.player_privacy pr on pr.player_id = p.id
-    )
-    select * from ranked
-    where player_id = $1
-    limit 1
-    `,
-    [playerId],
-  );
-
-  // Get top 15 for eggs hatched
-  const { rows: eggsTop } = await query<EggsRow>(
-    `
-    select
-      ls.player_id,
-      p.name,
-      p.avatar_url,
-      p.avatar,
-      ls.eggs_hatched,
-      pr.show_stats,
-      ls.eggs_rank_snapshot_24h,
-      row_number() over (order by ls.eggs_hatched desc, p.created_at desc) as rank
-    from public.leaderboard_stats ls
-    join public.players p on p.id = ls.player_id
-    left join public.player_privacy pr on pr.player_id = p.id
-    order by ls.eggs_hatched desc, p.created_at desc
-    limit 15
-    `,
-    [],
-  );
-
-  // Get my rank for eggs hatched
-  const { rows: eggsMyRank } = await query<EggsRow>(
-    `
-    with ranked as (
-      select
-        ls.player_id,
-        p.name,
-        p.avatar_url,
-        p.avatar,
-        ls.eggs_hatched,
-        pr.show_stats,
-        ls.eggs_rank_snapshot_24h,
-        row_number() over (order by ls.eggs_hatched desc, p.created_at desc) as rank
-      from public.leaderboard_stats ls
-      join public.players p on p.id = ls.player_id
-      left join public.player_privacy pr on pr.player_id = p.id
-    )
-    select * from ranked
-    where player_id = $1
-    limit 1
-    `,
-    [playerId],
-  );
-
-  function coinsRankChange(row: CoinsRow): number | null {
-    const current = Number(row.rank ?? 0);
-    return row.coins_rank_snapshot_24h != null ? row.coins_rank_snapshot_24h - current : null;
+  function mapCoinsEntry(row: LeaderboardRow, anonymize = false) {
+    const hidden = anonymize && row.show_coins === false;
+    const currentRank = Number(row.coins_rank ?? 0);
+    return {
+      playerId: hidden ? "null" : row.player_id,
+      playerName: hidden ? "anonymous" : (row.name ?? row.player_id),
+      avatarUrl: hidden ? null : (row.avatar_url ?? null),
+      avatar: hidden ? null : (row.avatar ?? null),
+      rank: currentRank,
+      total: Number(row.coins ?? 0),
+      rankChange: row.coins_rank_snapshot_24h != null ? row.coins_rank_snapshot_24h - currentRank : null,
+    };
   }
 
-  function eggsRankChange(row: EggsRow): number | null {
-    const current = Number(row.rank ?? 0);
-    return row.eggs_rank_snapshot_24h != null ? row.eggs_rank_snapshot_24h - current : null;
+  function mapEggsEntry(row: LeaderboardRow, anonymize = false) {
+    const hidden = anonymize && row.show_stats === false;
+    const currentRank = Number(row.eggs_rank ?? 0);
+    return {
+      playerId: hidden ? "null" : row.player_id,
+      playerName: hidden ? "anonymous" : (row.name ?? row.player_id),
+      avatarUrl: hidden ? null : (row.avatar_url ?? null),
+      avatar: hidden ? null : (row.avatar ?? null),
+      rank: currentRank,
+      total: Number(row.eggs_hatched ?? 0),
+      rankChange: row.eggs_rank_snapshot_24h != null ? row.eggs_rank_snapshot_24h - currentRank : null,
+    };
   }
 
   return {
     coins: {
-      top: (coinsTop ?? []).map((row) => {
-        const anonymized = row.show_coins === false;
-        return {
-          playerId: anonymized ? "null" : row.player_id,
-          playerName: anonymized ? "anonymous" : (row.name ?? row.player_id),
-          avatarUrl: anonymized ? null : (row.avatar_url ?? null),
-          avatar: anonymized ? null : (row.avatar ?? null),
-          rank: Number(row.rank ?? 0),
-          total: Number(row.coins ?? 0),
-          rankChange: coinsRankChange(row),
-        };
-      }),
-      myRank: coinsMyRank[0] ? {
-        playerId: coinsMyRank[0].player_id,
-        playerName: coinsMyRank[0].name ?? coinsMyRank[0].player_id,
-        avatarUrl: coinsMyRank[0].avatar_url ?? null,
-        avatar: coinsMyRank[0].avatar ?? null,
-        rank: Number(coinsMyRank[0].rank ?? 0),
-        total: Number(coinsMyRank[0].coins ?? 0),
-        rankChange: coinsRankChange(coinsMyRank[0]),
-      } : null,
+      top: tops.coinsTop.map((r) => mapCoinsEntry(r, true)),
+      myRank: myRow ? mapCoinsEntry(myRow) : null,
     },
     eggsHatched: {
-      top: (eggsTop ?? []).map((row) => {
-        const anonymized = row.show_stats === false;
-        return {
-          playerId: anonymized ? "null" : row.player_id,
-          playerName: anonymized ? "anonymous" : (row.name ?? row.player_id),
-          avatarUrl: anonymized ? null : (row.avatar_url ?? null),
-          avatar: anonymized ? null : (row.avatar ?? null),
-          rank: Number(row.rank ?? 0),
-          total: Number(row.eggs_hatched ?? 0),
-          rankChange: eggsRankChange(row),
-        };
-      }),
-      myRank: eggsMyRank[0] ? {
-        playerId: eggsMyRank[0].player_id,
-        playerName: eggsMyRank[0].name ?? eggsMyRank[0].player_id,
-        avatarUrl: eggsMyRank[0].avatar_url ?? null,
-        avatar: eggsMyRank[0].avatar ?? null,
-        rank: Number(eggsMyRank[0].rank ?? 0),
-        total: Number(eggsMyRank[0].eggs_hatched ?? 0),
-        rankChange: eggsRankChange(eggsMyRank[0]),
-      } : null,
+      top: tops.eggsTop.map((r) => mapEggsEntry(r, true)),
+      myRank: myRow ? mapEggsEntry(myRow) : null,
     },
   };
 }
