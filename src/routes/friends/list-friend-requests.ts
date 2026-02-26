@@ -29,6 +29,9 @@ export function registerListFriendRequestsRoute(app: Application): void {
         requested_by: string;
         status: string;
         created_at: string;
+        other_name: string | null;
+        other_avatar_url: string | null;
+        other_badges: string[] | null;
       };
 
       let rows: RelRow[] = [];
@@ -36,11 +39,24 @@ export function registerListFriendRequestsRoute(app: Application): void {
       try {
         const result = await query<RelRow>(
           `
-          select user_one_id, user_two_id, requested_by, status, created_at
-          from public.player_relationships
-          where status = 'pending'
-            and (user_one_id = $1 or user_two_id = $1)
-          order by created_at desc
+          select
+            pr.user_one_id,
+            pr.user_two_id,
+            pr.requested_by,
+            pr.status,
+            pr.created_at,
+            p.name as other_name,
+            p.avatar_url as other_avatar_url,
+            p.badges as other_badges
+          from public.player_relationships pr
+          join public.players p
+            on p.id = case
+              when pr.user_one_id = $1 then pr.user_two_id
+              else pr.user_one_id
+            end
+          where pr.status = 'pending'
+            and (pr.user_one_id = $1 or pr.user_two_id = $1)
+          order by pr.created_at desc
           `,
           [playerId],
         );
@@ -53,11 +69,17 @@ export function registerListFriendRequestsRoute(app: Application): void {
       const incoming: {
         fromPlayerId: string;
         otherPlayerId: string;
+        playerName: string;
+        avatarUrl: string | null;
+        badges: string[];
         createdAt: string;
       }[] = [];
       const outgoing: {
         toPlayerId: string;
         otherPlayerId: string;
+        playerName: string;
+        avatarUrl: string | null;
+        badges: string[];
         createdAt: string;
       }[] = [];
 
@@ -71,12 +93,18 @@ export function registerListFriendRequestsRoute(app: Application): void {
           outgoing.push({
             toPlayerId: otherId,
             otherPlayerId: otherId,
+            playerName: rel.other_name ?? otherId,
+            avatarUrl: rel.other_avatar_url ?? null,
+            badges: rel.other_badges ?? [],
             createdAt: rel.created_at,
           });
         } else {
           incoming.push({
             fromPlayerId: rel.requested_by,
             otherPlayerId: rel.requested_by,
+            playerName: rel.other_name ?? rel.requested_by,
+            avatarUrl: rel.other_avatar_url ?? null,
+            badges: rel.other_badges ?? [],
             createdAt: rel.created_at,
           });
         }

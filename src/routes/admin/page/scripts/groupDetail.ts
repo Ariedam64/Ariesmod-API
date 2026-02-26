@@ -9,7 +9,7 @@ function bGp(d,id){
   var g=d.group||{},mem=d.members||[],msgs=d.messages||[],act=d.activity||[],st=d.stats||{};
   var x='<div class="bc"><a href="#/dashboard">Dashboard</a><span class="bcs">Group</span></div>';
   x+='<div class="dhd"><div class="dhd-av">&#9776;</div><div class="dhd-bd">';
-  x+='<div class="dhd-nm">'+h(g.name||('Group '+id))+'</div><div class="dhd-mt">';
+  x+='<div class="dhd-nm">'+h(g.name||('Group '+id))+(g.is_public?'<span class="bd g" style="margin-left:8px;font-size:11px">Public</span>':'<span class="bd" style="margin-left:8px;font-size:11px">Private</span>')+'</div><div class="dhd-mt">';
   x+='<span><b>ID:</b> <span style="font-family:var(--m);font-size:11px">'+h(String(g.id||id))+'</span> <button class="cp" data-v="'+h(String(g.id||id))+'">Copy</button></span>';
   if(g.owner_id)x+='<span><b>Owner:</b> '+pl(g.owner_id,g.owner_name||g.owner_id)+'</span>';
   x+='<span><b>Members:</b> '+fn(st.member_count||mem.length)+'</span>';

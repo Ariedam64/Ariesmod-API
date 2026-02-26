@@ -141,7 +141,7 @@ async function rPl(id){
   try{var d=await gj('/admin/player/'+encodeURIComponent(id));cs(ck,d);if(_s==='player')bPl(d,id)}catch(e){if(e.name==='AbortError')return;if(!c)V.innerHTML='<div class="em">Player not found</div>'}
 }
 function bPl(d,id){
-  var p=d.player,st=d.state,pr=d.privacy,rels=d.relationships||[],rms=d.room_history||[],rlb=d.rate_limit_buckets||[],mrlb=d.message_rate_limit_buckets||[],lip=d.last_known_ip;
+  var p=d.player,st=d.state,pr=d.privacy,rels=d.relationships||[],rms=d.room_history||[],rlb=d.rate_limit_buckets||[],mrlb=d.message_rate_limit_buckets||[],lip=d.last_known_ip,lb=d.leaderboard||null;
   var cr=null;for(var i=0;i<rms.length;i++)if(!rms[i].left_at){cr=rms[i];break}
   var x='<div class="bc"><a href="#/dashboard">Dashboard</a><span class="bcs">Player</span></div>';
   x+='<div class="dhd"><div class="dhd-av">';
@@ -150,6 +150,7 @@ function bPl(d,id){
   x+='<span><b>ID:</b> <span style="font-family:var(--m);font-size:11px">'+h(p.id)+'</span> <button class="cp" data-v="'+h(p.id)+'">Copy</button></span>';
   x+='<span><b>Coins:</b> '+fc(p.coins)+'</span>';
   if(p.has_mod_installed)x+='<span class="bd g">Mod '+(p.mod_version?h(p.mod_version):'?')+'</span>';
+  var bgs=p.badges||[];for(var bi=0;bi<bgs.length;bi++){var bg=bgs[bi];x+='<span class="bd '+(bg==='mod_creator'?'p':'y')+'">'+h(bg==='mod_creator'?'Mod Creator':bg==='supporter'?'Supporter':bg)+'</span>'}
   x+='<span><b>Created:</b> '+fd(p.created_at)+'</span>';
   x+='<span><b>Last active:</b> '+fa(p.last_event_at)+'</span>';
   if(lip)x+='<span><b>IP:</b> '+h(lip)+'</span>';
@@ -158,7 +159,7 @@ function bPl(d,id){
 
   var fields=['garden','inventory','stats','activity_log','journal'];
   var stc=0;if(st){for(var i=0;i<fields.length;i++)if(st['has_'+fields[i]])stc++}
-  var tabs=[{id:'state',l:'State',b:stc},{id:'privacy',l:'Privacy'},{id:'friends',l:'Friends',b:rels.length},{id:'rooms',l:'Rooms',b:rms.length},{id:'groups',l:'Groups',b:0},{id:'messages',l:'Messages',b:0},{id:'limits',l:'Rate Limits',b:rlb.length+mrlb.length}];
+  var tabs=[{id:'state',l:'State',b:stc},{id:'privacy',l:'Privacy'},{id:'badges',l:'Badges',b:(p.badges||[]).length||null},{id:'friends',l:'Friends',b:rels.length},{id:'rooms',l:'Rooms',b:rms.length},{id:'groups',l:'Groups',b:0},{id:'messages',l:'Messages',b:0},{id:'leaderboard',l:'Leaderboard'},{id:'limits',l:'Rate Limits',b:rlb.length+mrlb.length}];
   x+='<div>'+mkTabs(tabs,'state');
 
   x+='<div class="tp" data-t="state">';
@@ -181,6 +182,23 @@ function bPl(d,id){
     x+='</div>';if(pr.updated_at)x+='<div style="font-size:11px;color:var(--t3);margin-top:8px">Updated: '+fd(pr.updated_at)+'</div>';
   }else x+='<div class="em">No privacy settings</div>';
   x+='</div>';
+
+  x+='<div class="tp" data-t="badges" style="display:none">';
+  x+='<div class="pg" id="bdg-list-'+h(id)+'">';
+  var allBadges=['mod_creator','supporter'];
+  var badgeLabels={mod_creator:'Mod Creator',supporter:'Supporter'};
+  var curBadges=p.badges||[];
+  for(var bi=0;bi<allBadges.length;bi++){
+    var bg=allBadges[bi],has=curBadges.indexOf(bg)>=0;
+    x+='<div class="pf" id="bdg-row-'+h(id)+'-'+bg+'">';
+    x+='<div class="pd '+(has?'on':'off')+'"></div>';
+    x+='<span>'+h(badgeLabels[bg])+'</span>';
+    x+='<span style="margin-left:auto;display:flex;gap:6px">';
+    if(!has){x+='<button class="btn btn-s btn-sm bdg-add" data-pid="'+h(id)+'" data-bg="'+bg+'">Add</button>'}
+    else{x+='<button class="btn btn-s btn-sm bdg-rm" style="background:var(--r)" data-pid="'+h(id)+'" data-bg="'+bg+'">Remove</button>'}
+    x+='</span></div>';
+  }
+  x+='</div></div>';
 
   x+='<div class="tp" data-t="friends" style="display:none">';
   if(rels.length){var cnt={accepted:0,pending:0,rejected:0};for(var i=0;i<rels.length;i++)if(cnt[rels[i].status]!==undefined)cnt[rels[i].status]++;
@@ -207,6 +225,18 @@ function bPl(d,id){
   x+='<div class="cht-empty" style="padding:40px">Loading groups...</div>';
   x+='</div>';
 
+  x+='<div class="tp" data-t="leaderboard" style="display:none">';
+  if(lb){
+    var mkRkChg=function(cur,snap){if(snap==null||cur==null)return'<span class="nl">-</span>';var diff=snap-cur;if(diff>0)return'<span style="color:var(--g)">&#9650; '+diff+'</span>';if(diff<0)return'<span style="color:var(--r)">&#9660; '+Math.abs(diff)+'</span>';return'<span style="color:var(--t3)">=</span>'};
+    x+='<div class="srow">';
+    x+=mkS('Coins Rank',lb.coins_rank!=null?'#'+fn(lb.coins_rank):'Unranked',[{v:fc(lb.coins||0),l:'coins'},{v:mkRkChg(lb.coins_rank,lb.coins_rank_snapshot_24h),l:'24h change'}]);
+    x+=mkS('Eggs Hatched Rank',lb.eggs_rank!=null?'#'+fn(lb.eggs_rank):'Unranked',[{v:fc(lb.eggs_hatched||0),l:'eggs hatched'},{v:mkRkChg(lb.eggs_rank,lb.eggs_rank_snapshot_24h),l:'24h change'}]);
+    x+='</div>';
+  }else{
+    x+='<div class="em">No leaderboard data</div>';
+  }
+  x+='</div>';
+
   x+='<div class="tp" data-t="limits" style="display:none">';
   if(rlb.length)x+=mkCo('API Rate Limits',rlb.length+' buckets',mkT(rlb,{}),false);
   if(mrlb.length)x+=mkCo('Message Rate Limits',mrlb.length+' buckets',mkT(mrlb,{}),rlb.length>0);
@@ -229,6 +259,30 @@ function bPl(d,id){
         bd.innerHTML='<div class="em" style="color:var(--r)">Error: '+h(e.message)+'</div>';
       });
     });
+  });
+
+  V.addEventListener('click',function bdgHdl(e){
+    var btn=e.target.closest('.bdg-add,.bdg-rm');
+    if(!btn)return;
+    var pid=btn.dataset.pid,bg=btn.dataset.bg,isAdd=btn.classList.contains('bdg-add');
+    if(!pid||!bg)return;
+    btn.disabled=true;
+    var prom=isAdd
+      ?fetch('/admin/player/'+encodeURIComponent(pid)+'/badge',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({badge:bg})})
+      :fetch('/admin/player/'+encodeURIComponent(pid)+'/badge/'+encodeURIComponent(bg),{method:'DELETE'});
+    prom.then(function(r){return r.json()}).then(function(){
+      var row=V.querySelector('#bdg-row-'+pid+'-'+bg);
+      if(!row){return}
+      var dot=row.querySelector('.pd');
+      var sp=row.querySelector('span:last-child');
+      if(isAdd){
+        if(dot)dot.className='pd on';
+        if(sp)sp.innerHTML='<button class="btn btn-s btn-sm bdg-rm" style="background:var(--r)" data-pid="'+h(pid)+'" data-bg="'+bg+'">Remove</button>';
+      }else{
+        if(dot)dot.className='pd off';
+        if(sp)sp.innerHTML='<button class="btn btn-s btn-sm bdg-add" data-pid="'+h(pid)+'" data-bg="'+bg+'">Add</button>';
+      }
+    }).catch(function(){btn.disabled=false});
   });
 
   _chatLoaded=false;_grpLoaded=false;_chatPid=id;

@@ -24,6 +24,11 @@ export function getLayout(): string {
         <div class="side-lbl">Social</div>
         <div class="sl" data-r="/rooms"><span class="ic">&#8962;</span>Rooms</div>
         <div class="sl" data-r="/groups"><span class="ic">&#9776;</span>Groups</div>
+        <div class="sl" data-r="/leaderboard"><span class="ic">&#9733;</span>Leaderboard</div>
+      </div>
+      <div class="side-section">
+        <div class="side-lbl">Actions</div>
+        <div class="sl" data-r="/broadcasts"><span class="ic">&#9654;</span>Broadcasts</div>
       </div>
     </nav>
     <div class="side-ctx" id="side-ctx" style="display:none">

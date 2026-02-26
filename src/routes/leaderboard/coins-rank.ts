@@ -29,6 +29,7 @@ export function registerLeaderboardCoinsRankRoute(app: Application): void {
         name: string | null;
         avatar_url: string | null;
         avatar: unknown;
+        badges: string[] | null;
         coins: string | number;
         last_event_at: string | null;
         show_coins: boolean | null;
@@ -42,6 +43,7 @@ export function registerLeaderboardCoinsRankRoute(app: Application): void {
           p.name,
           p.avatar_url,
           p.avatar,
+          p.badges,
           ls.coins,
           p.last_event_at,
           pr.show_coins,
@@ -80,6 +82,7 @@ export function registerLeaderboardCoinsRankRoute(app: Application): void {
                 playerName: "anonymous",
                 avatarUrl: null,
                 avatar: null,
+                badges: [],
                 lastEventAt: null,
               }
             : {
@@ -87,6 +90,7 @@ export function registerLeaderboardCoinsRankRoute(app: Application): void {
                 playerName: row.name ?? row.player_id,
                 avatarUrl: row.avatar_url ?? null,
                 avatar: row.avatar ?? null,
+                badges: row.badges ?? [],
                 lastEventAt: row.last_event_at ?? null,
               }),
           total: Number(row.coins ?? 0),

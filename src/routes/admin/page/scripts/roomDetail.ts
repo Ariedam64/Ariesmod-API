@@ -18,6 +18,16 @@ function bRm(d,id){
   if(ub)x+='<span><b>By:</b> '+pl(ub.id,ub.name)+'</span>';
   x+='</div></div></div>';
 
+  var ov=r.admin_privacy_override||'auto';
+  x+='<div style="margin:12px 0;padding:12px;border-radius:var(--rad);background:var(--s1);border:1px solid var(--s3)">';
+  x+='<div style="font-size:11px;font-weight:700;color:var(--t3);margin-bottom:8px">ADMIN PRIVACY OVERRIDE</div>';
+  x+='<div style="display:flex;gap:6px;align-items:center" id="priv-ctl">';
+  x+='<button class="btn btn-s btn-sm priv-btn" data-ov="auto" style="'+(ov==='auto'?'background:var(--g);color:#fff':'')+'">Auto</button>';
+  x+='<button class="btn btn-s btn-sm priv-btn" data-ov="public" style="'+(ov==='public'?'background:var(--p);color:#fff':'')+'">Public</button>';
+  x+='<button class="btn btn-s btn-sm priv-btn" data-ov="private" style="'+(ov==='private'?'background:var(--y);color:#fff':'')+'">Private</button>';
+  x+='<span id="priv-st" style="margin-left:8px;font-size:11px;color:var(--t3)"></span>';
+  x+='</div></div>';
+
   var tabs=[{id:'slots',l:'User Slots'},{id:'history',l:'History',b:hist.length}];
   x+='<div>'+mkTabs(tabs,'slots');
 
@@ -60,6 +70,22 @@ function bRm(d,id){
       bd.innerHTML='<div class="em" style="color:var(--r)">Error: '+h(e.message)+'</div>';
     });
   }
+
+  var privCtl=document.getElementById('priv-ctl');
+  if(privCtl)privCtl.addEventListener('click',function(e){
+    var btn=e.target.closest('.priv-btn');if(!btn)return;
+    var ov=btn.dataset.ov,st=document.getElementById('priv-st');
+    var colors={auto:'var(--g)',public:'var(--p)',private:'var(--y)'};
+    privCtl.querySelectorAll('.priv-btn').forEach(function(b){b.style.background='';b.style.color=''});
+    btn.style.background=colors[ov]||'';btn.style.color='#fff';
+    if(st)st.textContent='Saving...';
+    pj('/admin/room/'+encodeURIComponent(id)+'/privacy',{override:ov}).then(function(d){
+      if(st)st.textContent='Saved';
+      var badge=V.querySelector('.dhd-mt .bd.y,.dhd-mt .bd.g');
+      if(badge){badge.className='bd '+(d.is_private?'y':'g');badge.textContent=d.is_private?'Private':'Public'}
+      setTimeout(function(){if(st)st.textContent=''},2000);
+    }).catch(function(e){if(st)st.textContent='Error: '+e.message});
+  });
 }
 `;
 }

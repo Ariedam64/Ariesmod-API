@@ -143,9 +143,7 @@ export function registerAdminOverviewRoutes(app: Application): void {
         { rows: [groups] },
         { rows: [social] },
         { rows: [msgs] },
-        { rows: topPlayers },
         { rows: newPlayersSeries },
-        { rows: [blocked] },
         rateLimit,
         { rows: recentPlayers },
         { rows: richestPlayers },
@@ -194,10 +192,7 @@ export function registerAdminOverviewRoutes(app: Application): void {
           SELECT
             count(*) FILTER (WHERE status = 'accepted')::int AS accepted,
             count(*) FILTER (WHERE status = 'pending')::int AS pending,
-            count(*) FILTER (WHERE created_at >= now() - interval '24 hours')::int AS new_24h,
-            CASE WHEN count(*) > 0
-              THEN round(100.0 * count(*) FILTER (WHERE status = 'accepted') / count(*), 1)
-              ELSE 0 END AS acceptance_rate
+            count(*) FILTER (WHERE created_at >= now() - interval '24 hours')::int AS new_24h
           FROM public.player_relationships
         `),
         // 5. Messages
@@ -205,22 +200,10 @@ export function registerAdminOverviewRoutes(app: Application): void {
           SELECT
             count(*)::int AS total,
             count(*) FILTER (WHERE created_at >= now() - interval '24 hours')::int AS today,
-            count(DISTINCT conversation_id)::int AS conversations,
-            CASE WHEN count(*) > 0
-              THEN round(100.0 * count(*) FILTER (WHERE read_at IS NOT NULL) / count(*), 1)
-              ELSE 0 END AS read_rate
+            count(DISTINCT conversation_id)::int AS conversations
           FROM public.direct_messages
         `),
-        // 6. Top recently active players (no correlated subqueries)
-        timedQuery("top_players", `
-          SELECT p.id, p.name, p.avatar_url, p.coins,
-            p.last_event_at, p.has_mod_installed, p.mod_version
-          FROM public.players p
-          WHERE p.last_event_at >= now() - interval '7 days'
-          ORDER BY p.last_event_at DESC
-          LIMIT 10
-        `),
-        // 7. New players per day (14 days) - split by mod
+        // 6. New players per day (14 days) - split by mod
         timedQuery("new_players_14d", `
           WITH days AS (
             SELECT generate_series(
@@ -236,9 +219,7 @@ export function registerAdminOverviewRoutes(app: Application): void {
           LEFT JOIN public.players p ON date_trunc('day', p.created_at) = d.day
           GROUP BY d.day ORDER BY d.day ASC
         `),
-        // 8. Blocked IPs
-        timedQuery("blocked_ips", `SELECT count(*)::int AS total FROM public.blocked_ips`),
-        // 9. Rate limit 24h
+        // 7. Rate limit 24h
         getRateLimit24h(),
         // 10. Recent players
         timedQuery("recent_players", `
@@ -378,17 +359,14 @@ export function registerAdminOverviewRoutes(app: Application): void {
         social: {
           accepted: toNumber(social?.accepted),
           pending: toNumber(social?.pending),
-          acceptance_rate: toNumber(social?.acceptance_rate),
           new_24h: toNumber(social?.new_24h),
         },
         messages: {
           total: toNumber(msgs?.total),
           today: toNumber(msgs?.today),
           conversations: toNumber(msgs?.conversations),
-          read_rate: toNumber(msgs?.read_rate),
         },
         security: {
-          blocked_ips: toNumber(blocked?.total),
           rate_limit_24h: {
             total_hits: toNumber(rateLimit?.total_hits),
             unique_ips: toNumber(rateLimit?.unique_ips),
@@ -407,11 +385,6 @@ export function registerAdminOverviewRoutes(app: Application): void {
             count_no_mod: toNumber(r.count_no_mod),
           })),
         },
-        top_players: (topPlayers ?? []).map((r: any) => ({
-          id: r.id, name: r.name, avatar_url: r.avatar_url,
-          coins: toNumber(r.coins), has_mod_installed: !!r.has_mod_installed,
-          mod_version: r.mod_version, last_event_at: r.last_event_at,
-        })),
         recent_players: (recentPlayers ?? []).map((r: any) => ({
           id: r.id, name: r.name, avatar_url: r.avatar_url,
           has_mod_installed: !!r.has_mod_installed,

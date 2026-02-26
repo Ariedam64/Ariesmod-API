@@ -31,6 +31,7 @@ export function registerLeaderboardEggsRankRoute(app: Application): void {
           name: string | null;
           avatar_url: string | null;
           avatar: unknown;
+          badges: string[] | null;
           eggs_hatched: string | number;
           last_event_at: string | null;
           show_stats: boolean | null;
@@ -44,6 +45,7 @@ export function registerLeaderboardEggsRankRoute(app: Application): void {
             p.name,
             p.avatar_url,
             p.avatar,
+            p.badges,
             ls.eggs_hatched,
             p.last_event_at,
             pr.show_stats,
@@ -82,6 +84,7 @@ export function registerLeaderboardEggsRankRoute(app: Application): void {
                   playerName: "anonymous",
                   avatarUrl: null,
                   avatar: null,
+                  badges: [],
                   lastEventAt: null,
                 }
               : {
@@ -89,6 +92,7 @@ export function registerLeaderboardEggsRankRoute(app: Application): void {
                   playerName: row.name ?? row.player_id,
                   avatarUrl: row.avatar_url ?? null,
                   avatar: row.avatar ?? null,
+                  badges: row.badges ?? [],
                   lastEventAt: row.last_event_at ?? null,
                 }),
             total: Number(row.eggs_hatched ?? 0),

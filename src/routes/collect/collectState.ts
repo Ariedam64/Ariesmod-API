@@ -315,7 +315,11 @@ export function registerCollectStateRoute(app: Application): void {
           )
           values ($1,$2,$3,$4,$5,$6)
           on conflict (id) do update set
-            is_private = excluded.is_private,
+            is_private = CASE
+              WHEN public.rooms.admin_privacy_override = 'private' THEN true
+              WHEN public.rooms.admin_privacy_override = 'public' THEN false
+              ELSE excluded.is_private
+            END,
             last_updated_at = excluded.last_updated_at,
             last_updated_by_player_id = excluded.last_updated_by_player_id,
             players_count = excluded.players_count,

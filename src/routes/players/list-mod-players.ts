@@ -51,7 +51,8 @@ export function registerListModPlayersRoute(app: Application): void {
           name,
           avatar_url,
           avatar,
-          last_event_at
+          last_event_at,
+          badges
         from public.players
         ${where}
         order by last_event_at desc nulls last, id asc
@@ -73,6 +74,7 @@ export function registerListModPlayersRoute(app: Application): void {
           playerName: row.name ?? row.id,
           avatarUrl: row.avatar_url ?? null,
           avatar: row.avatar ?? null,
+          badges: row.badges ?? [],
           lastEventAt: row.last_event_at ?? null,
           isOnline,
         };

@@ -129,6 +129,10 @@ export function writeUnifiedEvents(
   }
 }
 
+export function getOnlinePlayerIds(): string[] {
+  return Array.from(streams.keys());
+}
+
 export function pushUnifiedEvent(
   playerId: string,
   type: string,

@@ -16,7 +16,8 @@ function bGroups(d){
 
   x+='<div class="srow">';
   x+=mkS('Total Groups',fn(st.total),[{v:fn(st.new_24h),l:'new 24h'},{v:fn(st.new_7d),l:'new 7d'}]);
-  x+=mkS('Members',fn(st.total_members),[{v:(st.avg_members!=null?Number(st.avg_members).toFixed(2):'0.00'),l:'avg / group'}]);
+  x+=mkS('Public / Private',fn(st.public_count)+' / '+fn(st.private_count),[{v:(st.avg_members!=null?Number(st.avg_members).toFixed(2):'0.00'),l:'avg members'}]);
+  x+=mkS('Members',fn(st.total_members),[]);
   x+=mkS('Messages',fn(st.total_messages),[{v:fn(st.messages_24h),l:'last 24h'}]);
   x+='</div>';
 
@@ -37,13 +38,15 @@ function loadGroupsList(){
     var x='';
     if(rows.length){
       x+='<div class="tw"><table><thead><tr>';
-      x+='<th>Group</th><th>Owner</th><th>Members</th><th>Messages</th><th>Last Msg</th><th>Created</th><th>Updated</th>';
+      x+='<th>Group</th><th>Type</th><th>Owner</th><th>Members</th><th>Messages</th><th>Last Msg</th><th>Created</th><th>Updated</th>';
       x+='</tr></thead><tbody>';
       for(var i=0;i<rows.length;i++){
         var g=rows[i];
         var owner=g.owner_id?pl(g.owner_id,g.owner_name||g.owner_id):'<span class="nl">-</span>';
+        var gpType=g.is_public?'<span class="bd g">Public</span>':'<span class="bd">Private</span>';
         x+='<tr>';
         x+='<td>'+gl(g.id,g.name||('Group '+g.id))+'</td>';
+        x+='<td>'+gpType+'</td>';
         x+='<td>'+owner+'</td>';
         x+='<td><span class="bd">'+fn(g.member_count||0)+'</span></td>';
         x+='<td><span class="bd">'+fn(g.message_count||0)+'</span></td>';

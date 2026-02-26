@@ -41,6 +41,7 @@ export function registerAdminDetailRoutes(app: Application): void {
           { rows: rateLimitBuckets },
           { rows: msgRateLimitBuckets },
           { rows: [lastIpRow] },
+          { rows: [leaderboard] },
         ] = await Promise.all([
           // 1. Player info
           timedQuery(
@@ -125,6 +126,15 @@ export function registerAdminDetailRoutes(app: Application): void {
             LIMIT 1`,
             [playerId],
           ),
+          // 9. Leaderboard stats
+          timedQuery(
+            "leaderboard",
+            `SELECT ls.coins_rank, ls.eggs_rank, ls.coins, ls.eggs_hatched,
+              ls.coins_rank_snapshot_24h, ls.eggs_rank_snapshot_24h
+            FROM public.leaderboard_stats ls
+            WHERE ls.player_id = $1`,
+            [playerId],
+          ),
         ]);
 
         if (!player) {
@@ -141,6 +151,7 @@ export function registerAdminDetailRoutes(app: Application): void {
           rate_limit_buckets: rateLimitBuckets,
           message_rate_limit_buckets: msgRateLimitBuckets,
           last_known_ip: lastIpRow?.ip ?? null,
+          leaderboard: leaderboard ?? null,
         });
       } catch (err) {
         console.error("[admin] player detail error:", err);
@@ -172,6 +183,7 @@ export function registerAdminDetailRoutes(app: Application): void {
           query(
             `SELECT id, is_private, players_count, last_updated_at, created_at,
               last_updated_by_player_id,
+              admin_privacy_override,
               user_slots IS NOT NULL AS has_user_slots,
               pg_column_size(user_slots) AS user_slots_size
             FROM public.rooms WHERE id = $1`,
@@ -343,13 +355,15 @@ export function registerAdminDetailRoutes(app: Application): void {
 
       try {
         const { rows } = await query(
-          `SELECT dm.id, dm.sender_id, dm.recipient_id, dm.body,
-            dm.created_at, dm.read_at, dm.room_id
-          FROM public.direct_messages dm
-          WHERE (dm.sender_id = $1 AND dm.recipient_id = $2)
-             OR (dm.sender_id = $2 AND dm.recipient_id = $1)
-          ORDER BY dm.created_at ASC
-          LIMIT 100`,
+          `SELECT * FROM (
+            SELECT dm.id, dm.sender_id, dm.recipient_id, dm.body,
+              dm.created_at, dm.read_at
+            FROM public.direct_messages dm
+            WHERE (dm.sender_id = $1 AND dm.recipient_id = $2)
+               OR (dm.sender_id = $2 AND dm.recipient_id = $1)
+            ORDER BY dm.created_at DESC
+            LIMIT 100
+          ) sub ORDER BY created_at ASC`,
           [playerId, otherId],
         );
 
@@ -532,7 +546,7 @@ export function registerAdminDetailRoutes(app: Application): void {
           { rows: [stats] },
         ] = await Promise.all([
           query(
-            `SELECT g.id, g.name, g.owner_id, g.created_at, g.updated_at,
+            `SELECT g.id, g.name, g.is_public, g.owner_id, g.created_at, g.updated_at,
               p.name AS owner_name, p.avatar_url AS owner_avatar_url
             FROM public.groups g
             LEFT JOIN public.players p ON p.id = g.owner_id
@@ -555,7 +569,7 @@ export function registerAdminDetailRoutes(app: Application): void {
             LEFT JOIN public.players p ON p.id = gm.sender_id
             WHERE gm.group_id = $1
             ORDER BY gm.created_at DESC
-            LIMIT 50`,
+            LIMIT 100`,
             [groupId],
           ),
           query(

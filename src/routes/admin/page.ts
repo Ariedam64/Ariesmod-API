@@ -13,8 +13,10 @@ import { getRoomDetailScript } from "./page/scripts/roomDetail";
 import { getGroupDetailScript } from "./page/scripts/groupDetail";
 import { getRoomsViewScript } from "./page/scripts/roomsView";
 import { getGroupsViewScript } from "./page/scripts/groupsView";
+import { getLeaderboardViewScript } from "./page/scripts/leaderboardView";
+import { getBroadcastViewScript } from "./page/scripts/broadcastView";
 
-let _cachedHtml: string | null = null;
+let _cachedHtml: string | null = null; // reset on each deploy
 
 function buildAdminHtml(): string {
   if (_cachedHtml) return _cachedHtml;
@@ -45,6 +47,8 @@ function buildAdminHtml(): string {
     ${getGroupDetailScript()}
     ${getRoomsViewScript()}
     ${getGroupsViewScript()}
+    ${getLeaderboardViewScript()}
+    ${getBroadcastViewScript()}
 
     rt();
   })();

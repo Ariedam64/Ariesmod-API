@@ -90,6 +90,7 @@ app.post("/friend-respond", requireApiKey, async (req: Request, res: Response) =
       id: string;
       name: string | null;
       avatar_url: string | null;
+      badges: string[] | null;
     }> = [];
 
     try {
@@ -97,9 +98,10 @@ app.post("/friend-respond", requireApiKey, async (req: Request, res: Response) =
         id: string;
         name: string | null;
         avatar_url: string | null;
+        badges: string[] | null;
       }>(
         `
-        select id, name, avatar_url
+        select id, name, avatar_url, badges
         from public.players
         where id = any($1::text[])
         `,
@@ -132,9 +134,11 @@ app.post("/friend-respond", requireApiKey, async (req: Request, res: Response) =
         requesterId: rel.requested_by,
         requesterName: requester?.name ?? rel.requested_by,
         requesterAvatarUrl: requester?.avatar_url ?? null,
+        requesterBadges: requester?.badges ?? [],
         responderId: playerId,
         responderName: responder?.name ?? playerId,
         responderAvatarUrl: responder?.avatar_url ?? null,
+        responderBadges: responder?.badges ?? [],
         action,
         updatedAt: now,
       };
@@ -222,11 +226,13 @@ app.post("/friend-respond", requireApiKey, async (req: Request, res: Response) =
       requesterId: rel.requested_by,
       requesterName: requester?.name ?? rel.requested_by,
       requesterAvatarUrl: requester?.avatar_url ?? null,
+      requesterBadges: requester?.badges ?? [],
       requesterRoomId,
       requesterIsOnline,
       responderId: playerId,
       responderName: responder?.name ?? playerId,
       responderAvatarUrl: responder?.avatar_url ?? null,
+      responderBadges: responder?.badges ?? [],
       responderRoomId,
       responderIsOnline,
       action,

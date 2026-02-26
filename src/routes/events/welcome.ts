@@ -8,6 +8,7 @@ export type WelcomeData = {
     name: string;
     avatarUrl: string | null;
     avatar: unknown;
+    badges: string[];
     privacy: {
       showGarden: boolean;
       showInventory: boolean;
@@ -23,6 +24,7 @@ export type WelcomeData = {
     name: string;
     avatarUrl: string | null;
     avatar: unknown;
+    badges: string[];
     lastEventAt: string | null;
     roomId: string | null;
     isOnline: boolean;
@@ -33,6 +35,7 @@ export type WelcomeData = {
       otherPlayerId: string;
       playerName: string;
       avatarUrl: string | null;
+      badges: string[];
       createdAt: string;
     }>;
     outgoing: Array<{
@@ -40,6 +43,7 @@ export type WelcomeData = {
       otherPlayerId: string;
       playerName: string;
       avatarUrl: string | null;
+      badges: string[];
       createdAt: string;
     }>;
   };
@@ -55,6 +59,7 @@ export type WelcomeData = {
       playerName: string;
       discordAvatarUrl: string | null;
       avatar: unknown;
+      badges: string[];
     }>;
     unreadCount: number;
     createdAt: string;
@@ -101,6 +106,7 @@ export type WelcomeData = {
       playerName: string;
       discordAvatarUrl: string | null;
       avatar: unknown;
+      badges: string[];
     }>;
     createdAt: string;
     updatedAt: string;
@@ -110,6 +116,7 @@ export type WelcomeData = {
     playerName: string;
     avatarUrl: string | null;
     avatar: unknown;
+    badges: string[];
     lastEventAt: string | null;
     isOnline: boolean;
   }>;
@@ -124,6 +131,7 @@ export type WelcomeData = {
     name: string;
     avatarUrl: string | null;
     avatar: unknown;
+    badges: string[];
     lastEventAt: string | null;
     roomId: string | null;
     isOnline: boolean;
@@ -136,6 +144,7 @@ export type WelcomeData = {
         playerName: string;
         avatarUrl: string | null;
         avatar: unknown;
+        badges: string[];
         rank: number;
         total: number;
         rankChange: number | null;
@@ -145,6 +154,7 @@ export type WelcomeData = {
         playerName: string;
         avatarUrl: string | null;
         avatar: unknown;
+        badges: string[];
         rank: number;
         total: number;
         rankChange: number | null;
@@ -156,6 +166,7 @@ export type WelcomeData = {
         playerName: string;
         avatarUrl: string | null;
         avatar: unknown;
+        badges: string[];
         rank: number;
         total: number;
         rankChange: number | null;
@@ -165,12 +176,18 @@ export type WelcomeData = {
         playerName: string;
         avatarUrl: string | null;
         avatar: unknown;
+        badges: string[];
         rank: number;
         total: number;
         rankChange: number | null;
       } | null;
     };
   };
+  pendingBroadcasts: Array<{
+    id: number;
+    action: string;
+    data: unknown;
+  }>;
 };
 
 async function getMyProfile(playerId: string): Promise<WelcomeData["myProfile"]> {
@@ -179,6 +196,7 @@ async function getMyProfile(playerId: string): Promise<WelcomeData["myProfile"]>
     name: string | null;
     avatar_url: string | null;
     avatar: unknown;
+    badges: string[] | null;
     show_garden: boolean | null;
     show_inventory: boolean | null;
     show_coins: boolean | null;
@@ -193,6 +211,7 @@ async function getMyProfile(playerId: string): Promise<WelcomeData["myProfile"]>
       p.name,
       p.avatar_url,
       p.avatar,
+      p.badges,
       pp.show_garden,
       pp.show_inventory,
       pp.show_coins,
@@ -214,6 +233,7 @@ async function getMyProfile(playerId: string): Promise<WelcomeData["myProfile"]>
     name: row?.name ?? playerId,
     avatarUrl: row?.avatar_url ?? null,
     avatar: row?.avatar ?? null,
+    badges: row?.badges ?? [],
     privacy: {
       showGarden: row?.show_garden !== false,
       showInventory: row?.show_inventory !== false,
@@ -232,6 +252,7 @@ async function getFriends(playerId: string): Promise<WelcomeData["friends"]> {
     name: string | null;
     avatar_url: string | null;
     avatar: unknown;
+    badges: string[] | null;
     last_event_at: string | null;
     room_id: string | null;
     is_private: boolean | null;
@@ -243,6 +264,7 @@ async function getFriends(playerId: string): Promise<WelcomeData["friends"]> {
       p.name,
       p.avatar_url,
       p.avatar,
+      p.badges,
       p.last_event_at,
       rp.room_id,
       r2.is_private,
@@ -277,6 +299,7 @@ async function getFriends(playerId: string): Promise<WelcomeData["friends"]> {
       name: row.name ?? row.id,
       avatarUrl: row.avatar_url ?? null,
       avatar: row.avatar ?? null,
+      badges: row.badges ?? [],
       lastEventAt: row.last_event_at ?? null,
       roomId: row.room_id && !roomHidden ? row.room_id : null,
       isOnline,
@@ -295,6 +318,7 @@ async function getFriendRequests(
     created_at: string;
     other_player_name: string | null;
     other_player_avatar_url: string | null;
+    other_player_badges: string[] | null;
   };
 
   const result = await query<RelRow>(
@@ -306,7 +330,8 @@ async function getFriendRequests(
       pr.status,
       pr.created_at,
       p.name as other_player_name,
-      p.avatar_url as other_player_avatar_url
+      p.avatar_url as other_player_avatar_url,
+      p.badges as other_player_badges
     from public.player_relationships pr
     join public.players p on p.id = case
       when pr.user_one_id = $1 then pr.user_two_id
@@ -333,6 +358,7 @@ async function getFriendRequests(
         otherPlayerId: otherId,
         playerName: rel.other_player_name ?? otherId,
         avatarUrl: rel.other_player_avatar_url ?? null,
+        badges: rel.other_player_badges ?? [],
         createdAt: rel.created_at,
       });
     } else {
@@ -341,6 +367,7 @@ async function getFriendRequests(
         otherPlayerId: rel.requested_by,
         playerName: rel.other_player_name ?? rel.requested_by,
         avatarUrl: rel.other_player_avatar_url ?? null,
+        badges: rel.other_player_badges ?? [],
         createdAt: rel.created_at,
       });
     }
@@ -392,7 +419,8 @@ async function getGroups(playerId: string): Promise<WelcomeData["groups"]> {
           'playerId', p.id,
           'playerName', coalesce(p.name, p.id),
           'discordAvatarUrl', p.avatar_url,
-          'avatar', p.avatar
+          'avatar', p.avatar,
+          'badges', p.badges
         )
         order by gmp.joined_at asc
       ) as preview_members
@@ -457,7 +485,8 @@ async function getPublicGroups(playerId: string): Promise<WelcomeData["publicGro
           'playerId', p.id,
           'playerName', coalesce(p.name, p.id),
           'discordAvatarUrl', p.avatar_url,
-          'avatar', p.avatar
+          'avatar', p.avatar,
+          'badges', p.badges
         )
         order by gmp.joined_at asc
       ) as preview_members
@@ -505,6 +534,7 @@ async function getModPlayers(): Promise<WelcomeData["modPlayers"]> {
     name: string | null;
     avatar_url: string | null;
     avatar: unknown;
+    badges: string[] | null;
     last_event_at: string | null;
   }>(
     `
@@ -513,6 +543,7 @@ async function getModPlayers(): Promise<WelcomeData["modPlayers"]> {
       name,
       avatar_url,
       avatar,
+      badges,
       last_event_at
     from public.players
     where has_mod_installed = true
@@ -532,6 +563,7 @@ async function getModPlayers(): Promise<WelcomeData["modPlayers"]> {
       playerName: row.name ?? row.id,
       avatarUrl: row.avatar_url ?? null,
       avatar: row.avatar ?? null,
+      badges: row.badges ?? [],
       lastEventAt: row.last_event_at ?? null,
       isOnline,
     };
@@ -561,7 +593,16 @@ async function getConversations(
           else dm.sender_id
         end as other_player_id
       from public.direct_messages dm
-      where dm.sender_id = $1 or dm.recipient_id = $1
+      where (dm.sender_id = $1 or dm.recipient_id = $1)
+        and exists (
+          select 1 from public.player_relationships pr
+          where pr.status = 'accepted'
+            and (
+              (pr.user_one_id = $1 and pr.user_two_id = case when dm.sender_id = $1 then dm.recipient_id else dm.sender_id end)
+              or
+              (pr.user_two_id = $1 and pr.user_one_id = case when dm.sender_id = $1 then dm.recipient_id else dm.sender_id end)
+            )
+        )
     ),
     conversation_messages as (
       select
@@ -718,6 +759,7 @@ async function getGroupMembers(playerId: string): Promise<WelcomeData["groupMemb
     member_name: string | null;
     avatar_url: string | null;
     avatar: unknown;
+    badges: string[] | null;
     last_event_at: string | null;
     room_id: string | null;
     is_private: boolean | null;
@@ -730,6 +772,7 @@ async function getGroupMembers(playerId: string): Promise<WelcomeData["groupMemb
       p.name as member_name,
       p.avatar_url,
       p.avatar,
+      p.badges,
       p.last_event_at,
       rp.room_id,
       r.is_private,
@@ -751,7 +794,7 @@ async function getGroupMembers(playerId: string): Promise<WelcomeData["groupMemb
       where player_id = $1
     )
       and gm.player_id != $1
-    group by gm.player_id, p.name, p.avatar_url, p.avatar, p.last_event_at, rp.room_id, r.is_private, pp.hide_room_from_public_list
+    group by gm.player_id, p.name, p.avatar_url, p.avatar, p.badges, p.last_event_at, rp.room_id, r.is_private, pp.hide_room_from_public_list
     `,
     [playerId],
   );
@@ -768,6 +811,7 @@ async function getGroupMembers(playerId: string): Promise<WelcomeData["groupMemb
       name: row.member_name ?? row.member_id,
       avatarUrl: row.avatar_url ?? null,
       avatar: row.avatar ?? null,
+      badges: row.badges ?? [],
       lastEventAt: row.last_event_at ?? null,
       roomId: row.room_id && !roomHidden ? row.room_id : null,
       isOnline,
@@ -820,6 +864,7 @@ type LeaderboardRow = {
   name: string | null;
   avatar_url: string | null;
   avatar: unknown;
+  badges: string[] | null;
   coins: string | number;
   eggs_hatched: string | number;
   coins_rank: string | number;
@@ -836,6 +881,7 @@ const LEADERBOARD_SQL = `
     p.name,
     p.avatar_url,
     p.avatar,
+    p.badges,
     ls.coins,
     ls.eggs_hatched,
     pr.show_coins,
@@ -879,6 +925,7 @@ async function getLeaderboard(playerId: string): Promise<WelcomeData["leaderboar
       playerName: hidden ? "anonymous" : (row.name ?? row.player_id),
       avatarUrl: hidden ? null : (row.avatar_url ?? null),
       avatar: hidden ? null : (row.avatar ?? null),
+      badges: hidden ? [] : (row.badges ?? []),
       rank: currentRank,
       total: Number(row.coins ?? 0),
       rankChange: row.coins_rank_snapshot_24h != null ? row.coins_rank_snapshot_24h - currentRank : null,
@@ -893,6 +940,7 @@ async function getLeaderboard(playerId: string): Promise<WelcomeData["leaderboar
       playerName: hidden ? "anonymous" : (row.name ?? row.player_id),
       avatarUrl: hidden ? null : (row.avatar_url ?? null),
       avatar: hidden ? null : (row.avatar ?? null),
+      badges: hidden ? [] : (row.badges ?? []),
       rank: currentRank,
       total: Number(row.eggs_hatched ?? 0),
       rankChange: row.eggs_rank_snapshot_24h != null ? row.eggs_rank_snapshot_24h - currentRank : null,
@@ -911,10 +959,43 @@ async function getLeaderboard(playerId: string): Promise<WelcomeData["leaderboar
   };
 }
 
+async function getPendingBroadcasts(playerId: string): Promise<WelcomeData["pendingBroadcasts"]> {
+  try {
+    const { rows } = await query<{ id: number; action: string; data: unknown }>(
+      `
+      select b.id, b.action, b.data
+      from public.admin_broadcasts b
+      where not exists (
+        select 1 from public.admin_broadcast_receipts r
+        where r.broadcast_id = b.id and r.player_id = $1
+      )
+        and (b.expires_at is null or b.expires_at > now())
+      order by b.created_at asc
+      `,
+      [playerId],
+    );
+
+    if (rows.length > 0) {
+      await query(
+        `
+        insert into public.admin_broadcast_receipts (broadcast_id, player_id)
+        select unnest($1::bigint[]), $2
+        on conflict do nothing
+        `,
+        [rows.map((r) => r.id), playerId],
+      );
+    }
+
+    return rows.map((r) => ({ id: r.id, action: r.action, data: r.data ?? null }));
+  } catch {
+    return [];
+  }
+}
+
 export async function buildWelcomeData(
   playerId: string,
 ): Promise<WelcomeData> {
-  const [myProfile, friends, friendRequests, groups, publicGroups, friendConversations, groupConversations, modPlayers, publicRooms, groupMembers, leaderboard] =
+  const [myProfile, friends, friendRequests, groups, publicGroups, friendConversations, groupConversations, modPlayers, publicRooms, groupMembers, leaderboard, pendingBroadcasts] =
     await Promise.all([
       getMyProfile(playerId),
       getFriends(playerId),
@@ -927,6 +1008,7 @@ export async function buildWelcomeData(
       getPublicRooms(),
       getGroupMembers(playerId),
       getLeaderboard(playerId),
+      getPendingBroadcasts(playerId),
     ]);
 
   return {
@@ -943,5 +1025,6 @@ export async function buildWelcomeData(
     publicRooms,
     groupMembers,
     leaderboard,
+    pendingBroadcasts,
   };
 }

@@ -93,7 +93,8 @@ export function registerPlayersViewRoute(app: Application): void {
             coins,
             has_mod_installed,
             last_event_at,
-            mod_version
+            mod_version,
+            badges
           from public.players
           where id = any($1::text[])
           `,
@@ -305,6 +306,7 @@ export function registerPlayersViewRoute(app: Application): void {
           playerId: row.id,
           hasModInstalled: !!row.has_mod_installed,
           modVersion: row.mod_version ?? null,
+          badges: row.badges ?? [],
           isOnline,
           lastEventAt,
           privacy,

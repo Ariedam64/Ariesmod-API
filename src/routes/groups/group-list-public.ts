@@ -64,7 +64,8 @@ export function registerGroupListPublicRoute(app: Application): void {
               'playerId', p.id,
               'playerName', coalesce(p.name, p.id),
               'discordAvatarUrl', p.avatar_url,
-              'avatar', p.avatar
+              'avatar', p.avatar,
+              'badges', p.badges
             )
             order by gmp.joined_at asc
           ) as preview_members

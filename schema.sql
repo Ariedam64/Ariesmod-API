@@ -11,7 +11,9 @@ create table if not exists public.players (
   created_at timestamptz not null default now(),
   has_mod_installed boolean not null default false,
   mod_version text null,
-  api_key text unique null
+  api_key text unique null,
+  badges text[] not null default '{}',
+  constraint players_badges_check check (badges <@ array['mod_creator', 'supporter']::text[])
 );
 
 create index if not exists players_name_idx
@@ -44,6 +46,7 @@ create table if not exists public.rooms (
   created_at timestamptz not null default now(),
   players_count integer not null default 0,
   user_slots jsonb null,
+  admin_privacy_override text null default null,
   constraint rooms_last_updated_by_player_id_fkey
     foreign key (last_updated_by_player_id)
     references public.players (id)
@@ -306,7 +309,43 @@ create index if not exists leaderboard_stats_updated_idx
   on public.leaderboard_stats using btree (updated_at desc);
 
 
--- 8) TABLE rate_limit_usage
+-- 8) TABLE admin_broadcasts / admin_broadcast_receipts
+create table if not exists public.admin_broadcasts (
+  id bigserial primary key,
+  action text not null,
+  data jsonb null,
+  target_type text not null default 'all',
+  target_id text null,
+  target_player_ids text[] null,
+  expires_at timestamptz null,
+  created_at timestamptz not null default now(),
+  constraint admin_broadcasts_target_type_check check (
+    target_type = any (array['all'::text, 'room'::text, 'group'::text, 'players'::text])
+  )
+);
+
+create index if not exists admin_broadcasts_created_at_idx
+  on public.admin_broadcasts using btree (created_at desc);
+
+create table if not exists public.admin_broadcast_receipts (
+  broadcast_id bigint not null,
+  player_id text not null,
+  sent_at timestamptz not null default now(),
+  constraint admin_broadcast_receipts_pkey primary key (broadcast_id, player_id),
+  constraint admin_broadcast_receipts_broadcast_id_fkey
+    foreign key (broadcast_id) references public.admin_broadcasts (id) on delete cascade,
+  constraint admin_broadcast_receipts_player_id_fkey
+    foreign key (player_id) references public.players (id) on delete cascade
+);
+
+create index if not exists admin_broadcast_receipts_player_idx
+  on public.admin_broadcast_receipts using btree (player_id);
+
+create index if not exists admin_broadcast_receipts_broadcast_idx
+  on public.admin_broadcast_receipts using btree (broadcast_id);
+
+
+-- 9) TABLE rate_limit_usage
 create table if not exists public.rate_limit_usage (
   id bigserial primary key,
   ip text null,

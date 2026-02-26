@@ -28,6 +28,7 @@ async function updateSnapshots() {
           ROW_NUMBER() OVER (ORDER BY ls.coins DESC, p.created_at DESC) as rank
         FROM public.leaderboard_stats ls
         JOIN public.players p ON p.id = ls.player_id
+        WHERE ls.coins > 0
       ),
       eggs_ranked AS (
         SELECT
@@ -35,14 +36,19 @@ async function updateSnapshots() {
           ROW_NUMBER() OVER (ORDER BY ls.eggs_hatched DESC, p.created_at DESC) as rank
         FROM public.leaderboard_stats ls
         JOIN public.players p ON p.id = ls.player_id
+        WHERE ls.eggs_hatched > 0
+      ),
+      all_players AS (
+        SELECT player_id FROM public.leaderboard_stats
       )
       UPDATE public.leaderboard_stats ls
       SET
         coins_rank = cr.rank,
         eggs_rank = er.rank
-      FROM coins_ranked cr
-      JOIN eggs_ranked er ON er.player_id = cr.player_id
-      WHERE ls.player_id = cr.player_id
+      FROM all_players ap
+      LEFT JOIN coins_ranked cr ON cr.player_id = ap.player_id
+      LEFT JOIN eggs_ranked er ON er.player_id = ap.player_id
+      WHERE ls.player_id = ap.player_id
       `,
       [],
     );

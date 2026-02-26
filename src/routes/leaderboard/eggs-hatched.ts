@@ -39,10 +39,11 @@ export function registerLeaderboardEggsRoute(app: Application): void {
       let idx = 1;
       let where = "";
 
+      where = `where ls.eggs_hatched > 0`;
       if (rawQuery.length > 0) {
         const likeQuery = `%${rawQuery}%`;
         params.push(likeQuery, likeQuery);
-        where = `where (name ilike $${idx++} or player_id ilike $${idx++})`;
+        where += ` and (p.name ilike $${idx++} or ls.player_id ilike $${idx++})`;
       }
 
       params.push(limit, offset);
@@ -53,6 +54,7 @@ export function registerLeaderboardEggsRoute(app: Application): void {
           name: string | null;
           avatar_url: string | null;
           avatar: unknown;
+          badges: string[] | null;
           eggs_hatched: string | number;
           last_event_at: string | null;
           show_stats: boolean | null;
@@ -65,6 +67,7 @@ export function registerLeaderboardEggsRoute(app: Application): void {
             p.name,
             p.avatar_url,
             p.avatar,
+            p.badges,
             ls.eggs_hatched,
             p.last_event_at,
             pr.show_stats,
@@ -86,14 +89,16 @@ export function registerLeaderboardEggsRoute(app: Application): void {
           const rankChange = row.eggs_rank_snapshot_24h != null
             ? row.eggs_rank_snapshot_24h - currentRank
             : null;
+          const hidden = row.show_stats === false;
 
           return {
-            ...(row.show_stats === false
+            ...(hidden
               ? {
                   playerId: "null",
                   playerName: "anonymous",
                   avatarUrl: null,
                   avatar: null,
+                  badges: [] as string[],
                   lastEventAt: null,
                 }
               : {
@@ -101,6 +106,7 @@ export function registerLeaderboardEggsRoute(app: Application): void {
                   playerName: row.name ?? row.player_id,
                   avatarUrl: row.avatar_url ?? null,
                   avatar: row.avatar ?? null,
+                  badges: row.badges ?? [],
                   lastEventAt: row.last_event_at ?? null,
                 }),
             rank: currentRank,
@@ -117,6 +123,7 @@ export function registerLeaderboardEggsRoute(app: Application): void {
             name: string | null;
             avatar_url: string | null;
             avatar: unknown;
+            badges: string[] | null;
             eggs_hatched: string | number;
             last_event_at: string | null;
             show_stats: boolean | null;
@@ -129,6 +136,7 @@ export function registerLeaderboardEggsRoute(app: Application): void {
               p.name,
               p.avatar_url,
               p.avatar,
+              p.badges,
               ls.eggs_hatched,
               p.last_event_at,
               pr.show_stats,
@@ -149,14 +157,16 @@ export function registerLeaderboardEggsRoute(app: Application): void {
             const rankChange = row.eggs_rank_snapshot_24h != null
               ? row.eggs_rank_snapshot_24h - currentRank
               : null;
+            const hidden = row.show_stats === false;
 
             myRank = {
-              ...(row.show_stats === false
+              ...(hidden
                 ? {
                     playerId: "null",
                     playerName: "anonymous",
                     avatarUrl: null,
                     avatar: null,
+                    badges: [] as string[],
                     lastEventAt: null,
                   }
                 : {
@@ -164,6 +174,7 @@ export function registerLeaderboardEggsRoute(app: Application): void {
                     playerName: row.name ?? row.player_id,
                     avatarUrl: row.avatar_url ?? null,
                     avatar: row.avatar ?? null,
+                    badges: row.badges ?? [],
                     lastEventAt: row.last_event_at ?? null,
                   }),
               rank: currentRank,

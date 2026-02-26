@@ -54,7 +54,8 @@ export function registerUnifiedPollRoute(app: Application): void {
     // Send connected and welcome events on first connection (since=0)
     if (sinceId === 0) {
       try {
-        const lastEventId = getLastEventId(playerId);
+        const rawLastEventId = getLastEventId(playerId);
+        const lastEventId = Math.max(rawLastEventId, 1);
         const serverSessionId = getServerSessionId();
         const welcomeData = await buildWelcomeData(playerId);
         const now = new Date().toISOString();

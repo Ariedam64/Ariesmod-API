@@ -190,4 +190,70 @@ export function registerAdminRoomsRoutes(app: Application): void {
       res.status(500).json({ error: "DB error" });
     }
   });
+
+  // Admin privacy override for a room
+  app.post(
+    "/admin/room/:roomId/privacy",
+    adminAuth,
+    async (req: Request, res: Response) => {
+      const roomId = String(req.params.roomId ?? "").trim();
+      if (!roomId) {
+        return res.status(400).json({ error: "Missing roomId" });
+      }
+
+      const override = String(req.body?.override ?? "").trim().toLowerCase();
+      if (override !== "private" && override !== "public" && override !== "auto") {
+        return res.status(400).json({
+          error: "Invalid override value",
+          valid: ["private", "public", "auto"],
+        });
+      }
+
+      try {
+        let result;
+
+        if (override === "private") {
+          result = await query(
+            `UPDATE public.rooms
+             SET admin_privacy_override = 'private', is_private = true
+             WHERE id = $1
+             RETURNING id, is_private, admin_privacy_override`,
+            [roomId],
+          );
+        } else if (override === "public") {
+          result = await query(
+            `UPDATE public.rooms
+             SET admin_privacy_override = 'public', is_private = false
+             WHERE id = $1
+             RETURNING id, is_private, admin_privacy_override`,
+            [roomId],
+          );
+        } else {
+          // auto: clear override, recalculate from player privacy
+          result = await query(
+            `UPDATE public.rooms r
+             SET admin_privacy_override = NULL,
+                 is_private = COALESCE(
+                   (SELECT pp.hide_room_from_public_list
+                    FROM public.player_privacy pp
+                    WHERE pp.player_id = r.last_updated_by_player_id),
+                   false
+                 )
+             WHERE r.id = $1
+             RETURNING r.id, r.is_private, r.admin_privacy_override`,
+            [roomId],
+          );
+        }
+
+        if (!result.rows[0]) {
+          return res.status(404).json({ error: "Room not found" });
+        }
+
+        return res.json(result.rows[0]);
+      } catch (err) {
+        console.error("[admin] room privacy override error:", err);
+        return res.status(500).json({ error: "DB error" });
+      }
+    },
+  );
 }

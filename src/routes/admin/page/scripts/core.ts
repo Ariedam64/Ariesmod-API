@@ -40,7 +40,7 @@ function rt(){
   if(p[0]==='player'||p[0]==='room'||p[0]==='group'){ctx.style.display='';var tp=p[0],id=p.slice(1).join('/');ci.innerHTML='<div class="sl on"><span class="ic">'+(tp==='player'?'&#9786;':(tp==='room'?'&#8962;':'&#9776;'))+'</span>'+h(tp==='player'?'Player':(tp==='room'?'Room':'Group'))+': '+h(id.length>12?id.slice(0,10)+'..':id)+'</div>'}
   else{ctx.style.display='none'}
   _s=p[0];
-  switch(p[0]){case'dashboard':rDash();break;case'rooms':rRooms();break;case'groups':rGroups();break;case'tables':rTbl(p[1]||'');break;case'sql':rSql();break;case'search':rSrch();break;case'player':rPl(p.slice(1).join('/'));break;case'room':rRm(p.slice(1).join('/'));break;case'group':rGp(p.slice(1).join('/'));break;default:rDash()}
+  switch(p[0]){case'dashboard':rDash();break;case'rooms':rRooms();break;case'groups':rGroups();break;case'leaderboard':rLeaderboard();break;case'tables':rTbl(p[1]||'');break;case'sql':rSql();break;case'search':rSrch();break;case'player':rPl(p.slice(1).join('/'));break;case'room':rRm(p.slice(1).join('/'));break;case'group':rGp(p.slice(1).join('/'));break;case'broadcasts':rBroadcasts();break;default:rDash()}
 }
 window.addEventListener('hashchange',rt);
 document.addEventListener('click',function(e){

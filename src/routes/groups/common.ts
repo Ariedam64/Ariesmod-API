@@ -145,15 +145,17 @@ export async function getPlayerInfo(
   name: string;
   avatar: unknown;
   avatarUrl: string | null;
+  badges: string[];
 } | null> {
   const { rows } = await query<{
     id: string;
     name: string | null;
     avatar: unknown;
     avatar_url: string | null;
+    badges: string[] | null;
   }>(
     `
-    select id, name, avatar, avatar_url
+    select id, name, avatar, avatar_url, badges
     from public.players
     where id = $1
     limit 1
@@ -167,6 +169,7 @@ export async function getPlayerInfo(
     name: row.name ?? row.id,
     avatar: row.avatar ?? null,
     avatarUrl: row.avatar_url ?? null,
+    badges: row.badges ?? [],
   };
 }
 
@@ -178,6 +181,7 @@ export async function getGroupMembersDetailed(
     name: string;
     avatarUrl: string | null;
     avatar: unknown;
+    badges: string[];
     lastEventAt: string | null;
     roomId: string | null;
     isOnline: boolean;
@@ -192,6 +196,7 @@ export async function getGroupMembersDetailed(
     name: string | null;
     avatar_url: string | null;
     avatar: unknown;
+    badges: string[] | null;
     last_event_at: string | null;
     room_id: string | null;
     is_private: boolean | null;
@@ -205,6 +210,7 @@ export async function getGroupMembersDetailed(
       coalesce(p.name, gm.player_id) as name,
       p.avatar_url,
       p.avatar,
+      p.badges,
       p.last_event_at,
       rp.room_id,
       r.is_private,
@@ -235,6 +241,7 @@ export async function getGroupMembersDetailed(
       name: row.name ?? row.player_id,
       avatarUrl: row.avatar_url ?? null,
       avatar: row.avatar ?? null,
+      badges: row.badges ?? [],
       lastEventAt: row.last_event_at ?? null,
       roomId: row.room_id && !roomHidden ? row.room_id : null,
       isOnline,

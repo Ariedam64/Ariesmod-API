@@ -10,6 +10,8 @@ export function registerAdminGroupsRoutes(app: Application): void {
         `
         select
           (select count(*)::int from public.groups) as total,
+          (select count(*)::int from public.groups where is_public = true) as public_count,
+          (select count(*)::int from public.groups where is_public = false or is_public is null) as private_count,
           (select count(*)::int from public.groups where created_at >= now() - interval '24 hours') as new_24h,
           (select count(*)::int from public.groups where created_at >= now() - interval '7 days') as new_7d,
           (select count(*)::int from public.groups where updated_at >= now() - interval '24 hours') as updated_24h,
@@ -46,6 +48,7 @@ export function registerAdminGroupsRoutes(app: Application): void {
           select
             g.id,
             g.name,
+            g.is_public,
             g.owner_id,
             g.created_at,
             g.updated_at,

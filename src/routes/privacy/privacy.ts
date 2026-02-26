@@ -176,7 +176,11 @@ export function registerPrivacyRoutes(app: Application): void {
           if (currentRoomId) {
             // Mettre à jour is_private dans la table rooms
             await query(
-              `update public.rooms set is_private = $1 where id = $2`,
+              `update public.rooms set is_private = CASE
+                WHEN admin_privacy_override = 'private' THEN true
+                WHEN admin_privacy_override = 'public' THEN false
+                ELSE $1
+              END where id = $2`,
               [privacy.hideRoomFromPublicList, currentRoomId],
             );
 

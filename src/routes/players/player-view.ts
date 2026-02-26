@@ -74,7 +74,8 @@ export function registerPlayerViewRoute(app: Application): void {
           coins,
           has_mod_installed,
           last_event_at,
-          mod_version
+          mod_version,
+          badges
         from public.players
         where id = $1
         limit 1
@@ -317,6 +318,7 @@ export function registerPlayerViewRoute(app: Application): void {
       room: wantRoom ? room : null,
       hasModInstalled: wantProfile ? !!player.has_mod_installed : false,
       modVersion: wantProfile ? player.mod_version ?? null : null,
+      badges: wantProfile ? (player.badges ?? []) : [],
       isOnline,
       lastEventAt,
       privacy: wantProfile ? privacy : DEFAULT_PRIVACY,

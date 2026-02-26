@@ -27,6 +27,7 @@ export function registerListFriendsRoute(app: Application): void {
         name: string | null;
         avatar_url: string | null;
         avatar: unknown;
+        badges: string[] | null;
         last_event_at: string | null;
         room_id: string | null;
         is_private: boolean | null;
@@ -38,6 +39,7 @@ export function registerListFriendsRoute(app: Application): void {
           p.name,
           p.avatar_url,
           p.avatar,
+          p.badges,
           p.last_event_at,
           rp.room_id,
           r2.is_private,
@@ -72,6 +74,7 @@ export function registerListFriendsRoute(app: Application): void {
           name: row.name ?? row.id,
           avatarUrl: row.avatar_url ?? null,
           avatar: row.avatar ?? null,
+          badges: row.badges ?? [],
           lastEventAt: row.last_event_at ?? null,
           roomId: row.room_id && !roomHidden ? row.room_id : null,
           isOnline,

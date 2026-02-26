@@ -37,10 +37,11 @@ export function registerLeaderboardCoinsRoute(app: Application): void {
     let idx = 1;
     let where = "";
 
+    where = `where ls.coins > 0`;
     if (rawQuery.length > 0) {
       const likeQuery = `%${rawQuery}%`;
       params.push(likeQuery, likeQuery);
-      where = `where (name ilike $${idx++} or player_id ilike $${idx++})`;
+      where += ` and (p.name ilike $${idx++} or ls.player_id ilike $${idx++})`;
     }
 
     params.push(limit, offset);
@@ -51,6 +52,7 @@ export function registerLeaderboardCoinsRoute(app: Application): void {
           name: string | null;
           avatar_url: string | null;
           avatar: unknown;
+          badges: string[] | null;
           coins: string | number;
           last_event_at: string | null;
           show_coins: boolean | null;
@@ -63,6 +65,7 @@ export function registerLeaderboardCoinsRoute(app: Application): void {
             p.name,
             p.avatar_url,
             p.avatar,
+            p.badges,
             ls.coins,
             p.last_event_at,
             pr.show_coins,
@@ -84,14 +87,16 @@ export function registerLeaderboardCoinsRoute(app: Application): void {
         const rankChange = row.coins_rank_snapshot_24h != null
           ? row.coins_rank_snapshot_24h - currentRank
           : null;
+        const hidden = row.show_coins === false;
 
         return {
-          ...(row.show_coins === false
+          ...(hidden
             ? {
                 playerId: "null",
                 playerName: "anonymous",
                 avatarUrl: null,
                 avatar: null,
+                badges: [] as string[],
                 lastEventAt: null,
               }
             : {
@@ -99,6 +104,7 @@ export function registerLeaderboardCoinsRoute(app: Application): void {
                 playerName: row.name ?? row.player_id,
                 avatarUrl: row.avatar_url ?? null,
                 avatar: row.avatar ?? null,
+                badges: row.badges ?? [],
                 lastEventAt: row.last_event_at ?? null,
               }),
           rank: currentRank,
@@ -115,6 +121,7 @@ export function registerLeaderboardCoinsRoute(app: Application): void {
           name: string | null;
           avatar_url: string | null;
           avatar: unknown;
+          badges: string[] | null;
           coins: string | number;
           last_event_at: string | null;
           show_coins: boolean | null;
@@ -127,6 +134,7 @@ export function registerLeaderboardCoinsRoute(app: Application): void {
             p.name,
             p.avatar_url,
             p.avatar,
+            p.badges,
             ls.coins,
             p.last_event_at,
             pr.show_coins,
@@ -147,14 +155,16 @@ export function registerLeaderboardCoinsRoute(app: Application): void {
           const rankChange = row.coins_rank_snapshot_24h != null
             ? row.coins_rank_snapshot_24h - currentRank
             : null;
+          const hidden = row.show_coins === false;
 
           myRank = {
-            ...(row.show_coins === false
+            ...(hidden
               ? {
                   playerId: "null",
                   playerName: "anonymous",
                   avatarUrl: null,
                   avatar: null,
+                  badges: [] as string[],
                   lastEventAt: null,
                 }
               : {
@@ -162,6 +172,7 @@ export function registerLeaderboardCoinsRoute(app: Application): void {
                   playerName: row.name ?? row.player_id,
                   avatarUrl: row.avatar_url ?? null,
                   avatar: row.avatar ?? null,
+                  badges: row.badges ?? [],
                   lastEventAt: row.last_event_at ?? null,
                 }),
             rank: currentRank,

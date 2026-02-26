@@ -1,6 +1,6 @@
 export function getRoomsViewScript(): string {
   return `
-var _rmState={limit:100,offset:0};
+var _rmState={limit:100,offset:0,q:''};
 
 function rRooms(){
   var ck='rooms_view',c=cg(ck,TTL.d);if(c)bRooms(c);else V.innerHTML=skel(8);
@@ -20,16 +20,21 @@ function bRooms(d){
   x+=mkS('Avg Occupancy',(st.avg_players!=null?Number(st.avg_players).toFixed(2):'0.00'),[{v:'6',l:'max slots'}]);
   x+='</div>';
 
+  x+='<div style="margin:12px 0 4px"><input type="text" id="rm-q" placeholder="Search by room ID..." style="width:100%;max-width:360px;padding:8px 12px;border:1px solid var(--s3);border-radius:var(--rad);background:var(--s1);color:var(--t1);font-size:13px;outline:none" value="'+h(_rmState.q)+'"></div>';
+
   x+='<div class="pag" id="rm-pag" style="margin-bottom:8px"></div>';
   x+=mkP('All Rooms (Most to Least Full)','<div id="rm-list">'+skel(8)+'</div>');
 
   V.innerHTML=x;
 
   loadRoomsList();
+
+  var rmQ=document.getElementById('rm-q');
+  if(rmQ)rmQ.addEventListener('input',deb(function(){_rmState.q=rmQ.value.trim();_rmState.offset=0;loadRoomsList()},300));
 }
 
 function loadRoomsList(){
-  var qs='?limit='+(_rmState.limit||100)+'&offset='+(_rmState.offset||0);
+  var qs='?limit='+(_rmState.limit||100)+'&offset='+(_rmState.offset||0)+(_rmState.q?'&q='+encodeURIComponent(_rmState.q):'');
   var list=document.getElementById('rm-list');
   if(list)list.innerHTML=skel(6);
   gj('/admin/rooms-list'+qs,{_na:true}).then(function(d){

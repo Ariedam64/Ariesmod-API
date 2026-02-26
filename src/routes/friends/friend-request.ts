@@ -134,9 +134,10 @@ app.post("/friend-request", requireApiKey, async (req: Request, res: Response) =
         id: string;
         name: string | null;
         avatar_url: string | null;
+        badges: string[] | null;
       }>(
         `
-        select id, name, avatar_url
+        select id, name, avatar_url, badges
         from public.players
         where id = any($1::text[])
         `,
@@ -150,9 +151,11 @@ app.post("/friend-request", requireApiKey, async (req: Request, res: Response) =
         requesterId: fromPlayerId,
         requesterName: fromPlayer?.name ?? fromPlayerId,
         requesterAvatarUrl: fromPlayer?.avatar_url ?? null,
+        requesterBadges: fromPlayer?.badges ?? [],
         targetId: toPlayerId,
         targetName: toPlayer?.name ?? toPlayerId,
         targetAvatarUrl: toPlayer?.avatar_url ?? null,
+        targetBadges: toPlayer?.badges ?? [],
         createdAt: now,
       };
 
